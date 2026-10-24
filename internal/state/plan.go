@@ -39,6 +39,13 @@ type Change struct {
 	ReplacePaths    []string
 	Importing       bool
 	Deposed         string
+	// ChangedAttrs and UnknownAttrs hold top-level attribute names only;
+	// values are compared in memory and never retained.
+	ChangedAttrs []string
+	UnknownAttrs []string
+	// SensitiveAttrs counts touched attributes Terraform marks sensitive;
+	// their names are left out of every list above.
+	SensitiveAttrs int
 }
 
 // DeferredChange is a change Terraform deferred until apply.
@@ -192,10 +199,144 @@ func normalizeChange(rc *tfjson.ResourceChange, drift bool) (Change, bool) {
 	if drift {
 		c.DriftActions = append([]string{}, c.Actions...)
 	}
-	for _, p := range rc.Change.ReplacePaths {
-		c.ReplacePaths = append(c.ReplacePaths, pathString(p))
+	allSensitive, sensitive := sensitiveKeys(rc.Change.BeforeSensitive, rc.Change.AfterSensitive)
+	hidden := map[string]bool{}
+	visible := func(names []string) []string {
+		var out []string
+		for _, k := range names {
+			if allSensitive || sensitive[k] {
+				hidden[k] = true
+			} else {
+				out = append(out, k)
+			}
+		}
+		return out
 	}
+	for _, p := range rc.Change.ReplacePaths {
+		if steps, ok := p.([]any); ok && len(steps) > 0 {
+			if k, ok := steps[0].(string); ok && len(visible([]string{k})) == 0 {
+				continue
+			}
+		} else if allSensitive {
+			hidden["(path)"] = true
+			continue
+		}
+		c.ReplacePaths = appendUnique(c.ReplacePaths, formatPath(p))
+	}
+	if c.Action == ActionUpdate || c.Action == ActionReplace {
+		changed, pending := attrDiff(rc.Change.Before, rc.Change.After, rc.Change.AfterUnknown)
+		c.ChangedAttrs, c.UnknownAttrs = visible(changed), visible(pending)
+	}
+	c.SensitiveAttrs = len(hidden)
 	return c, true
+}
+
+// sensitiveKeys returns the top-level attributes marked sensitive in either
+// before_sensitive or after_sensitive, or true when the whole object is.
+func sensitiveKeys(marks ...any) (bool, map[string]bool) {
+	keys := map[string]bool{}
+	for _, m := range marks {
+		switch x := m.(type) {
+		case bool:
+			if x {
+				return true, keys
+			}
+		case map[string]any:
+			for k, v := range x {
+				if containsTrue(v) {
+					keys[k] = true
+				}
+			}
+		}
+	}
+	return false, keys
+}
+
+// attrDiff returns the sorted top-level attribute names whose value differs
+// between before and after, and those whose new value is unknown until apply.
+func attrDiff(before, after, unknown any) (changed, pending []string) {
+	b, _ := before.(map[string]any)
+	a, _ := after.(map[string]any)
+	u, _ := unknown.(map[string]any)
+	for k, v := range u {
+		if containsTrue(v) {
+			pending = append(pending, k)
+		}
+	}
+	isPending := map[string]bool{}
+	for _, k := range pending {
+		isPending[k] = true
+	}
+	keys := map[string]bool{}
+	if b != nil && a != nil {
+		for k := range b {
+			keys[k] = true
+		}
+		for k := range a {
+			keys[k] = true
+		}
+	}
+	for k := range keys {
+		if isPending[k] {
+			continue
+		}
+		if canonicalJSON(b[k]) != canonicalJSON(a[k]) {
+			changed = append(changed, k)
+		}
+	}
+	sort.Strings(changed)
+	sort.Strings(pending)
+	return changed, pending
+}
+
+func containsTrue(v any) bool {
+	switch x := v.(type) {
+	case bool:
+		return x
+	case map[string]any:
+		for _, e := range x {
+			if containsTrue(e) {
+				return true
+			}
+		}
+	case []any:
+		for _, e := range x {
+			if containsTrue(e) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func canonicalJSON(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return string(b)
+}
+
+// formatPath renders a replace path such as ["network",0,"subnet"] as
+// network[0].subnet.
+func formatPath(v any) string {
+	steps, ok := v.([]any)
+	if !ok {
+		return pathString(v)
+	}
+	var sb strings.Builder
+	for _, s := range steps {
+		switch x := s.(type) {
+		case string:
+			if sb.Len() > 0 {
+				sb.WriteByte('.')
+			}
+			sb.WriteString(x)
+		default:
+			sb.WriteString("[" + pathString(x) + "]")
+		}
+	}
+	return sb.String()
 }
 
 // CanonicalAction reduces a Terraform action list to one label.

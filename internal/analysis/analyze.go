@@ -84,6 +84,7 @@ type Result struct {
 	Plan        *PlanSummary   `json:"plan,omitempty"`
 	Findings    []Finding      `json:"findings"`
 	Seeds       []string       `json:"seeds"`
+	ApplyOrder  []string       `json:"apply_order,omitempty"`
 	Graph       *Graph         `json:"-"`
 }
 
@@ -126,6 +127,7 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 	if a.opts.CheckCredentials {
 		a.checkCredentials()
 	}
+	order := a.applyOrder()
 
 	sortFindings(a.findings)
 	res := &Result{
@@ -133,6 +135,7 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 		Verdict:     Verdict(a.findings),
 		Findings:    a.findings,
 		Seeds:       seeds,
+		ApplyOrder:  order,
 		Graph:       a.g,
 	}
 	if res.Findings == nil {
@@ -295,6 +298,23 @@ func (a *analyzer) applyPlan() {
 			if n.Planned {
 				n.Instances++
 			}
+			if !isMutation(c.Action) {
+				continue
+			}
+			for _, k := range c.ChangedAttrs {
+				n.ChangedAttrs = appendUniqueStr(n.ChangedAttrs, k)
+			}
+			for _, k := range c.UnknownAttrs {
+				n.UnknownAttrs = appendUniqueStr(n.UnknownAttrs, k)
+			}
+			for _, p := range c.ReplacePaths {
+				n.ReplacePaths = appendUniqueStr(n.ReplacePaths, p)
+			}
+			if c.ActionReason != "" {
+				n.Reasons = appendUniqueStr(n.Reasons, c.ActionReason)
+			}
+			n.SensitiveAttrs = max(n.SensitiveAttrs, c.SensitiveAttrs)
+			n.Importing = n.Importing || c.Importing
 		}
 	}
 	for _, d := range a.plan.Drifts {

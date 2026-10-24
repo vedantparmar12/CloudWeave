@@ -4,9 +4,9 @@
 
 CloudWeave reads Terraform state and plan JSON offline and answers the questions `terraform plan` doesn't:
 
-- **What is this 80k-line state?** It gives you a single self-contained HTML report with a state map, the plan's change cone, a searchable neighborhood explorer and an inventory tree. It works without Terraform, a backend or a cloud login.
+- **What is this 80k-line state?** It gives you a single self-contained HTML report with a state map, a plan-change tree that says *why* each resource changes, the plan's change cone, a searchable neighborhood explorer and an inventory tree. It also writes a Markdown summary for PR comments. It works without Terraform, a backend or a cloud login.
 - **Why did plan succeed but apply fail?** It flags drift that overlaps or feeds planned changes, resources deleted out of band, stale saved plans, plan/state mismatch, version skew, eventually-consistent IAM grants and credentials that expire mid-apply.
-- **What breaks in my *other* states?** It stitches several states together through `terraform_remote_state` outputs, shared resource IDs and Azure ↔ GCP identity federation. A replacement in one state then shows up as an impact in the others.
+- **What breaks in my *other* states?** It stitches several states together through `terraform_remote_state` outputs, shared resource IDs and Azure ↔ GCP identity federation. A replacement in one state then shows up as an impact in the others, and CloudWeave tells you which state to apply first.
 - **Will the cross-cloud trust chain still work?** It runs static checks of GCP Workload Identity Federation and Entra ID federated credentials: issuer, audience, subject, attribute mapping/condition, disabled pools and replaced identities.
 
 ```
@@ -36,7 +36,7 @@ CloudWeave is built to run against production state before an apply:
 | Never modifies state | It only reads files you pass. It has no `state push`, no backend client and no lock handling. It refuses to write a report onto any input file or anything named `*.tfstate*`. |
 | Never holds the lock | It never talks to a backend. You export snapshots yourself with `terraform state pull` (read-only, lock-free). |
 | No cloud calls, no telemetry | It needs no network access at all. |
-| No secrets in reports | Reports contain addresses, types, actions, counts and edges, never attribute values. Sensitive paths are skipped during matching. Identifiers in finding text are masked (`c0ff…89ab`) unless you pass `--reveal-ids`. Credential checks decode JWT claims locally and never print tokens. |
+| No secrets in reports | Reports contain addresses, types, actions, counts, edges and changed attribute *names*, never attribute values. Attributes Terraform marks sensitive are not even named, only counted. Sensitive paths are skipped during matching. Identifiers in finding text are masked (`c0ff…89ab`) unless you pass `--reveal-ids`. Credential checks decode JWT claims locally and never print tokens. |
 | Private output | Reports are written with mode `0600`. The HTML report has a strict CSP, loads nothing external, and embeds data as escaped JSON rendered only via `textContent`. |
 
 A clean report lowers risk; it cannot guarantee that `terraform apply` succeeds.
@@ -76,6 +76,7 @@ cloudweave analyze \
 | `--primary-state name` | auto | State the plan applies to. Auto-detected by matching resource IDs with the plan's prior state. |
 | `-o, --out path` | | Self-contained HTML report. |
 | `--json path\|-` | | Machine-readable report (`cloudweave.report/v1`). |
+| `--markdown path\|-` | | Markdown summary for pull-request comments: verdict, apply order, findings table and largest blast radius. |
 | `--fail-on sev` | `none` | Exit `2` if any finding is at or above `info\|low\|medium\|high\|critical`. |
 | `--plan-max-age` | `1h` | Saved plans older than this are flagged. |
 | `--apply-window` | `30m` | Expected apply duration; credentials expiring within it are flagged. |
@@ -92,11 +93,16 @@ Exit codes: `0` success, `1` usage or input error, `2` findings at or above `--f
 ```yaml
 - run: terraform show -json tfplan > plan.json
 - run: terraform state pull > current.tfstate
-- run: cloudweave analyze -s current.tfstate -s other.tfstate -p plan.json -o cloudweave.html --fail-on critical
+- run: cloudweave analyze -s current.tfstate -s other.tfstate -p plan.json -o cloudweave.html --markdown cloudweave.md --fail-on critical
 - uses: actions/upload-artifact@v4
   if: always()
   with: { name: cloudweave, path: cloudweave.html }
+- if: always() && github.event_name == 'pull_request'
+  run: gh pr comment ${{ github.event.pull_request.number }} --body-file cloudweave.md
+  env: { GH_TOKEN: "${{ github.token }}" }
 ```
+
+The Markdown summary contains the same data as the reports: addresses, actions, attribute *names* and counts, never values.
 
 ### Credential checks (`--check-credentials`)
 
@@ -114,13 +120,14 @@ Subject tokens are decoded without signature verification, only to compare `exp`
 
 | Tab | What it shows |
 |---|---|
-| Overview | Verdict, key numbers, top findings, a map of states with aggregated cross-state links, and a table of every cross-state edge with its evidence and confidence. |
+| Overview | Verdict, key numbers, a plan action bar, the safe apply order across states, top findings, a map of states with aggregated cross-state links, and a table of every cross-state edge with its evidence and confidence. |
+| Plan changes | Every changed or drifted resource in a collapsible state → module tree, with per-module action counts, action toggles and a filter. Each row says *why*: attributes that force replacement, attributes that change, values known only after apply, and Terraform's action reason. |
 | Findings | All findings, filterable by severity and category, with remediation and links to the affected resources. |
 | Change cone | Changed and drifted resources, everything transitively impacted (across states), and optionally their direct dependencies, laid out by distance. |
-| Explore | Search any address, type or module, then walk its neighborhood: dependencies on the left, dependents on the right. |
+| Explore | Search any address, type or module (press `/`), then walk its neighborhood: dependencies on the left, dependents on the right. |
 | Inventory | State → module → type tree, lazily expanded, so huge states stay fast. |
 
-Colors encode cloud (stripe), planned action (border) and drift (dotted). Edge style encodes the kind of link: dependency, remote-state, id-match or federation.
+Colors encode cloud (stripe), planned action (border) and drift (dotted). Edge style encodes the kind of link: dependency, remote-state, id-match or federation. In graph views, scroll to zoom, drag to pan and hover a resource to fade everything except its direct neighbours (dashed edges lead to dependents). **Export SVG** saves the current graph as a standalone file for docs or tickets.
 
 ## Rules
 
@@ -170,6 +177,7 @@ Colors encode cloud (stripe), planned action (border) and drift (dotted). Edge s
 | CW501 | info | `terraform_remote_state` source not provided |
 | CW502 | medium | Consumer holds a stale copy of producer outputs |
 | CW503 | high | Same cloud resource managed by two states |
+| CW504 | medium | States depend on each other in a cycle, so no safe apply order exists |
 
 ## Limits
 

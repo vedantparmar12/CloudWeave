@@ -75,6 +75,7 @@ type analyzeFlags struct {
 	primary          string
 	htmlOut          string
 	jsonOut          string
+	mdOut            string
 	failOn           string
 	planMaxAge       time.Duration
 	applyWindow      time.Duration
@@ -104,6 +105,7 @@ func newAnalyze(version string) *cobra.Command {
 	fl.StringVar(&f.primary, "primary-state", "", "name or path of the state the plan applies to (auto-detected by default)")
 	fl.StringVarP(&f.htmlOut, "out", "o", "", "write a self-contained HTML report to this path")
 	fl.StringVar(&f.jsonOut, "json", "", "write the JSON report to this path (- for stdout)")
+	fl.StringVar(&f.mdOut, "markdown", "", "write a Markdown summary for pull request comments to this path (- for stdout)")
 	fl.StringVar(&f.failOn, "fail-on", "none", "exit 2 if any finding is at or above this severity (info|low|medium|high|critical|none)")
 	fl.DurationVar(&f.planMaxAge, "plan-max-age", time.Hour, "flag saved plans older than this")
 	fl.DurationVar(&f.applyWindow, "apply-window", 30*time.Minute, "expected apply duration; credentials expiring within it are flagged")
@@ -155,13 +157,19 @@ func runAnalyze(stdout io.Writer, version string, f *analyzeFlags) error {
 		inputs = append(inputs, f.plan)
 	}
 
-	for _, out := range []string{f.htmlOut, f.jsonOut} {
+	outs := []string{f.htmlOut, f.jsonOut, f.mdOut}
+	for i, out := range outs {
 		if err := checkOutputPath(out, inputs); err != nil {
 			return err
 		}
+		for _, other := range outs[i+1:] {
+			if out != "" && out == other {
+				return errors.New("--out, --json and --markdown must name different files")
+			}
+		}
 	}
-	if f.htmlOut != "" && f.htmlOut == f.jsonOut {
-		return errors.New("--out and --json must be different files")
+	if f.htmlOut == "-" {
+		return errors.New("--out needs a file path; the HTML report is not written to stdout")
 	}
 
 	res, err := analysis.Analyze(states, plan, analysis.Options{
@@ -182,17 +190,23 @@ func runAnalyze(stdout io.Writer, version string, f *analyzeFlags) error {
 			return err
 		}
 	}
-	jsonToStdout := f.jsonOut == "-"
-	if jsonToStdout {
-		if err := report.WriteJSON(stdout, rep); err != nil {
-			return err
-		}
-	} else if f.jsonOut != "" {
-		if err := writeFile(f.jsonOut, func(w io.Writer) error { return report.WriteJSON(w, rep) }); err != nil {
-			return err
+	for _, o := range []struct {
+		path  string
+		write func(io.Writer, *report.Report) error
+	}{{f.jsonOut, report.WriteJSON}, {f.mdOut, report.WriteMarkdown}} {
+		switch o.path {
+		case "":
+		case "-":
+			if err := o.write(stdout, rep); err != nil {
+				return err
+			}
+		default:
+			if err := writeFile(o.path, func(w io.Writer) error { return o.write(w, rep) }); err != nil {
+				return err
+			}
 		}
 	}
-	if !f.quiet && !jsonToStdout {
+	if !f.quiet && f.jsonOut != "-" && f.mdOut != "-" {
 		printSummary(stdout, rep, f)
 	}
 

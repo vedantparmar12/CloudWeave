@@ -29,6 +29,7 @@ type Report struct {
 	Plan        *analysis.PlanSummary   `json:"plan,omitempty"`
 	Findings    []analysis.Finding      `json:"findings"`
 	Seeds       []string                `json:"seeds"`
+	ApplyOrder  []string                `json:"apply_order,omitempty"`
 	Nodes       []*analysis.Node        `json:"nodes"`
 	Edges       []analysis.Edge         `json:"edges"`
 	MaxNodes    int                     `json:"max_nodes"`
@@ -46,6 +47,7 @@ func Build(res *analysis.Result, toolVersion string, maxNodes int) *Report {
 		Plan:        res.Plan,
 		Findings:    res.Findings,
 		Seeds:       res.Seeds,
+		ApplyOrder:  res.ApplyOrder,
 		Nodes:       res.Graph.SortedNodes(),
 		Edges:       res.Graph.Edges,
 		MaxNodes:    maxNodes,

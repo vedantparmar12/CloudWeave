@@ -51,21 +51,42 @@ The original idea of a "shadow state" that CloudWeave keeps in sync was dropped.
       - Downstream is a BFS over dependents, across states.
       - Upstream is the direct dependencies of the seeds.
       - Per-seed impact counts include cross-state counts.
-   7. Run plan, drift, blast-radius, state-hygiene and (optionally) credential checks, then sort findings and derive the verdict.
+   7. Run plan, drift, blast-radius, state-hygiene and (optionally) credential checks.
+   8. **Apply order**: collapse cross-state edges (excluding low-confidence and federation edges, since trust can be wired in either order) into a state graph and order it topologically. Cycles raise CW504.
+   9. Sort findings and derive the verdict.
 3. **Report** (`internal/report`)
    - A JSON schema (`cloudweave.report/v1`) carries metadata only.
    - The HTML file embeds that JSON in a non-executable script tag and renders it with vanilla JS/SVG.
+   - The Markdown writer renders the same report as a PR comment; input text is escaped so names cannot break tables or inject HTML.
+
+### Explaining each change without values
+
+For update and replace actions, `state.LoadPlan` compares `before` and `after` in memory, attribute by attribute, and keeps only the **names** of top-level attributes that differ. It also records attributes with unknown values from `after_unknown`, `replace_paths` (formatted as `network[0].subnet`) and `action_reason`. Values are discarded right away. This is how the report can say "forces replacement: location · known after apply: client_id" while still never containing a value.
+
+Attributes that Terraform marks sensitive (`before_sensitive` / `after_sensitive`) are not named at all. The report only says how many sensitive attributes are touched, so a changed `administrator_login_password` shows up as "1 sensitive attribute (hidden)". If the whole object is sensitive, no attribute names are listed.
 
 ## Visualizing huge states
 
 A full-graph render of an 80k-line state is useless. The report never draws everything:
 
 - **State map**: one box per state, with aggregated cross-state edges.
+- **Plan changes**: only changed and drifted resources, in a state → module tree (module paths split with the bracket-aware parser), each with its reason.
 - **Change cone**: only the plan's seeds and their impact, layered by distance, with depth and state filters.
 - **Explore**: radius-limited neighborhood of one resource, with dependencies left and dependents right.
 - **Inventory**: lazily expanded tree (state → module → type → resource).
 
 Each column is capped (`--max-nodes`) with "+N more". A synthetic 612k-line (15 MB) state analyzes in about 3 seconds and yields a ~130 KB report.
+
+Graph views pan and zoom with a single SVG transform rather than re-layout, so moving around stays cheap. Hovering a node fades everything except its direct neighbours. SVG export clones the current graph, removes the view transform and inlines the few styles it needs, so the file renders on its own.
+
+### Design borrowed from existing tools
+
+Two shipped visualizers were reverse engineered with REA to choose these interactions:
+
+- [Rover](https://github.com/im2nguyen/rover) v0.3.3, a Go binary with an embedded Vue + Cytoscape UI, contributed the neighbourhood fade on focus and SVG export.
+- Terraform Visual 0.2.1, a Next.js app using AntV G6, contributed the collapsible module tree of plan changes.
+
+Neither tool links multiple states.
 
 ## Edge cases handled
 

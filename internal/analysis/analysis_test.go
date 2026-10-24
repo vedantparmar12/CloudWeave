@@ -118,6 +118,39 @@ func TestMultiCloudFixture(t *testing.T) {
 	}
 }
 
+func TestChangeExplanation(t *testing.T) {
+	states, plan := loadFixtures(t)
+	res, err := Analyze(states, plan, Options{Now: planTime, Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	uami := res.Graph.Nodes["azure::azurerm_user_assigned_identity.workload"]
+	if uami == nil {
+		t.Fatal("uami node missing")
+	}
+	check := func(name string, got, want []string) {
+		t.Helper()
+		if strings.Join(got, ",") != strings.Join(want, ",") {
+			t.Errorf("%s = %v, want %v", name, got, want)
+		}
+	}
+	check("uami changed", uami.ChangedAttrs, []string{"location"})
+	check("uami unknown", uami.UnknownAttrs, []string{"client_id", "id", "principal_id"})
+	check("uami replace", uami.ReplacePaths, []string{"location"})
+	check("uami reasons", uami.Reasons, []string{"replace_because_cannot_update"})
+
+	aks := res.Graph.Nodes["azure::azurerm_kubernetes_cluster.aks"]
+	check("aks changed", aks.ChangedAttrs, []string{"default_node_pool"})
+	check("aks unknown", aks.UnknownAttrs, []string{"identity"})
+
+	b, _ := json.Marshal(res.Graph.SortedNodes())
+	for _, secret := range []string{"northeurope", "westeurope", "SECRET"} {
+		if strings.Contains(string(b), secret) {
+			t.Errorf("node JSON leaks attribute value %q", secret)
+		}
+	}
+}
+
 func TestPlanAgeAndMismatch(t *testing.T) {
 	states, plan := loadFixtures(t)
 	res, err := Analyze(states[1:], plan, Options{Now: planTime.Add(48 * time.Hour), Getenv: noEnv})

@@ -57,6 +57,45 @@ func TestHTMLEscapesEmbeddedData(t *testing.T) {
 	}
 }
 
+func TestMarkdownEscapesAndHidesValues(t *testing.T) {
+	st := &state.State{Name: "a|b<i>"}
+	st.AddResource(&state.Resource{
+		Address: "aws_db_instance.db", Mode: "managed", Type: "aws_db_instance", Name: "db",
+		Instances: []state.Instance{{Attributes: map[string]any{"password": "hunter2-secret"}}},
+	})
+	res, err := analysis.Analyze([]*state.State{st}, nil, analysis.Options{Getenv: func(string) string { return "" }})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rep := Build(res, "test", 10)
+	rep.ApplyOrder = []string{"gcp", "azure"}
+	rep.Findings = append(rep.Findings, analysis.Finding{
+		Rule: "CW999", Severity: analysis.SevHigh, Title: "pipe | and <b>tag</b>\nnewline",
+		Nodes: []string{"s::a`b|c"},
+	})
+	var buf bytes.Buffer
+	if err := WriteMarkdown(&buf, rep); err != nil {
+		t.Fatal(err)
+	}
+	md := buf.String()
+	if strings.Contains(md, "hunter2") {
+		t.Error("attribute value leaked into Markdown")
+	}
+	if strings.Contains(md, "<b>tag") || strings.Contains(md, "<i>") {
+		t.Error("raw HTML from input reached Markdown")
+	}
+	for _, line := range strings.Split(md, "\n") {
+		if strings.HasPrefix(line, "| HIGH") || strings.Contains(line, "CW999") && strings.HasPrefix(line, "|") {
+			if n := strings.Count(line, "|") - strings.Count(line, `\|`); n != 5 {
+				t.Errorf("table row has %d unescaped pipes: %s", n, line)
+			}
+		}
+	}
+	if !strings.Contains(md, "`gcp` → `azure`") {
+		t.Error("apply order missing")
+	}
+}
+
 func TestJSONHasNoAttributeValues(t *testing.T) {
 	st := &state.State{Name: "s"}
 	st.AddResource(&state.Resource{

@@ -46,6 +46,13 @@ type Node struct {
 	Distance  int         `json:"distance,omitempty"`
 	Impact    int         `json:"impact,omitempty"`
 	CrossImp  int         `json:"cross_impact,omitempty"`
+	// Why the plan touches this resource: attribute names and reasons only.
+	ChangedAttrs   []string `json:"changed_attrs,omitempty"`
+	UnknownAttrs   []string `json:"unknown_attrs,omitempty"`
+	ReplacePaths   []string `json:"replace_paths,omitempty"`
+	SensitiveAttrs int      `json:"sensitive_attrs,omitempty"`
+	Reasons        []string `json:"reasons,omitempty"`
+	Importing      bool     `json:"importing,omitempty"`
 }
 
 // Edge means From depends on To.

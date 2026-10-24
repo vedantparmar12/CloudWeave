@@ -1,10 +1,13 @@
 package state
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	tfjson "github.com/hashicorp/terraform-json"
 )
 
 func TestParseAddress(t *testing.T) {
@@ -190,6 +193,50 @@ func TestParseRemoteStateReference(t *testing.T) {
 	}
 	if _, _, ok := parseRemoteStateReference("data.aws_vpc.main.id"); ok {
 		t.Error("non remote-state reference matched")
+	}
+}
+
+func TestAttrDiff(t *testing.T) {
+	before := map[string]any{"name": "a", "tags": map[string]any{"x": "1"}, "id": "i-1"}
+	after := map[string]any{"name": "b", "tags": map[string]any{"x": "1"}, "id": nil}
+	changed, pending := attrDiff(before, after, map[string]any{"id": true})
+	if strings.Join(changed, ",") != "name" || strings.Join(pending, ",") != "id" {
+		t.Errorf("changed=%v pending=%v", changed, pending)
+	}
+	changed, pending = attrDiff(before, nil, map[string]any{"id": true})
+	if len(changed) != 0 || strings.Join(pending, ",") != "id" {
+		t.Errorf("missing after: changed=%v pending=%v", changed, pending)
+	}
+}
+
+func TestSensitiveAttrNamesHidden(t *testing.T) {
+	src := `{"address":"azurerm_mssql_server.db","mode":"managed","type":"azurerm_mssql_server","name":"db",
+	  "provider_name":"registry.terraform.io/hashicorp/azurerm",
+	  "change":{"actions":["delete","create"],
+	    "before":{"name":"a","administrator_login_password":"old-pw","connection":{"key":"k1"}},
+	    "after":{"name":"b","administrator_login_password":"new-pw","connection":{"key":"k2"}},
+	    "after_unknown":{"generated_secret":true},
+	    "before_sensitive":{"administrator_login_password":true},
+	    "after_sensitive":{"connection":{"key":true},"generated_secret":true},
+	    "replace_paths":[["administrator_login_password"],["name"]]}}`
+	var rc tfjson.ResourceChange
+	if err := json.Unmarshal([]byte(src), &rc); err != nil {
+		t.Fatal(err)
+	}
+	c, ok := normalizeChange(&rc, false)
+	if !ok {
+		t.Fatal("change not normalized")
+	}
+	if strings.Join(c.ChangedAttrs, ",") != "name" || len(c.UnknownAttrs) != 0 || strings.Join(c.ReplacePaths, ",") != "name" {
+		t.Errorf("sensitive names leaked: changed=%v unknown=%v replace=%v", c.ChangedAttrs, c.UnknownAttrs, c.ReplacePaths)
+	}
+	if c.SensitiveAttrs != 3 {
+		t.Errorf("SensitiveAttrs = %d, want 3", c.SensitiveAttrs)
+	}
+
+	rc.Change.AfterSensitive = true
+	if c, _ := normalizeChange(&rc, false); len(c.ChangedAttrs)+len(c.UnknownAttrs)+len(c.ReplacePaths) != 0 || c.SensitiveAttrs != 4 {
+		t.Errorf("fully sensitive object: %+v", c)
 	}
 }
 

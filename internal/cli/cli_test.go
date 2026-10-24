@@ -36,6 +36,25 @@ func TestAnalyzeWritesReports(t *testing.T) {
 	}
 }
 
+func TestMarkdownOutput(t *testing.T) {
+	base := []string{"analyze", "-s", "azure=" + fixture("azure.tfstate"), "-s", "gcp=" + fixture("gcp.tfstate"), "-p", fixture("azure-plan.json")}
+	code, out, errs := run(append(base, "--markdown", "-")...)
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	if !strings.HasPrefix(out, "## CloudWeave preflight") || strings.Contains(out, "CloudWeave preflight: BLOCK") {
+		t.Errorf("stdout should hold only Markdown: %s", out)
+	}
+	if strings.Contains(out, "SECRET") || strings.Contains(out, "northeurope") {
+		t.Error("attribute values leaked into Markdown")
+	}
+
+	p := filepath.Join(t.TempDir(), "r.md")
+	if code, _, errs := run(append(base, "--markdown", p, "--json", p)...); code != 1 || !strings.Contains(errs, "different files") {
+		t.Errorf("duplicate outputs: exit %d, %s", code, errs)
+	}
+}
+
 func TestFailOnExitCode(t *testing.T) {
 	args := []string{"analyze", "-q", "-s", fixture("azure.tfstate"), "-s", fixture("gcp.tfstate"), "-p", fixture("azure-plan.json")}
 	if code, _, _ := run(append(args, "--fail-on", "critical")...); code != 2 {

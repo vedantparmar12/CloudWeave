@@ -340,3 +340,74 @@ func (a *analyzer) sameLineage(x, y string) bool {
 	sx, sy := a.stateByName(x), a.stateByName(y)
 	return sx != nil && sy != nil && sx.Lineage != "" && sx.Lineage == sy.Lineage
 }
+
+// applyOrder orders states so that every state comes after the states it
+// reads values from. Federation edges are trust links that can be created in
+// either order, so they do not constrain the order. States in a cycle are
+// appended last and reported.
+func (a *analyzer) applyOrder() []string {
+	if len(a.states) < 2 {
+		return nil
+	}
+	deps := map[string]map[string]bool{}
+	for _, st := range a.states {
+		deps[st.Name] = map[string]bool{}
+	}
+	for _, e := range a.g.Edges {
+		from, to := a.g.Nodes[e.From], a.g.Nodes[e.To]
+		if from == nil || to == nil || from.State == to.State || e.Confidence == ConfLow || e.Kind == EdgeFederation {
+			continue
+		}
+		if deps[from.State] != nil && deps[to.State] != nil {
+			deps[from.State][to.State] = true
+		}
+	}
+	var order []string
+	done := map[string]bool{}
+	for len(order) < len(a.states) {
+		var ready []string
+		for name, d := range deps {
+			if done[name] {
+				continue
+			}
+			ok := true
+			for dep := range d {
+				if !done[dep] {
+					ok = false
+					break
+				}
+			}
+			if ok {
+				ready = append(ready, name)
+			}
+		}
+		if len(ready) == 0 {
+			break
+		}
+		sort.Strings(ready)
+		for _, n := range ready {
+			done[n] = true
+		}
+		order = append(order, ready...)
+	}
+	if len(order) < len(a.states) {
+		var cycle []string
+		for _, st := range a.states {
+			if !done[st.Name] {
+				cycle = append(cycle, st.Name)
+			}
+		}
+		sort.Strings(cycle)
+		order = append(order, cycle...)
+		a.add(Finding{
+			Rule:     "CW504",
+			Severity: SevMedium,
+			Category: CatCrossState,
+			Title:    "States depend on each other in a cycle",
+			Detail: fmt.Sprintf("States [%s] read from each other, so no apply order lets each one see the other's latest outputs. A change in either can need two applies to converge.",
+				strings.Join(cycle, ", ")),
+			Remediation: "Move the shared resources or outputs into one state, or break the cycle with a data source that does not depend on the other state's outputs.",
+		})
+	}
+	return order
+}
