@@ -200,7 +200,7 @@ func (a *analyzer) checkRemovedConfig() {
 		Title: "Resources will be destroyed because their configuration was removed",
 		Detail: fmt.Sprintf("%d resources lost their configuration block. If they were moved to another state or module, applying this plan deletes live infrastructure.",
 			len(nodes)),
-		Remediation: "If the resource moved, use a `moved` block (same state) or a `removed { lifecycle { destroy = false } }` block (different state) instead of deleting the config.",
+		Remediation: "For a same-state move, retain destination configuration and use a reviewed `moved` block. For a cross-state ownership transfer, pause competing runs and take protected backups, coordinate non-destructive removal only in the relinquishing state with import into exactly one destination owner, and review full plans for both states to prevent destruction or recreation.",
 		Nodes:       nodes,
 	})
 }
@@ -328,7 +328,7 @@ func (a *analyzer) checkBlastRadius(seeds []string) {
 					Title: fmt.Sprintf("%s %s is used by other states", n.Action, n.Address),
 					Detail: fmt.Sprintf("%d resources in other states depend on it (%s). They keep pointing at the old object until their own state is re-applied, and Terraform here cannot see them.",
 						len(cross), joinLimited(cross, 5)),
-					Remediation: "Coordinate the change: apply this state, then immediately plan/apply the dependent states, or use create_before_destroy and keep the old object until dependents move.",
+					Remediation: "Verify independent working credentials that do not rely on the changing identity or trust before staging parallel identities or resources with reviewed full, non-targeted plans. Retain the old object and trust in configuration until all consumers have migrated and verified token exchange and required API authorization; never use targeted federation changes as a shortcut.",
 					Nodes:       append([]string{id}, cross...),
 				})
 			}
@@ -393,7 +393,7 @@ func (a *analyzer) checkStates() {
 			Rule: "CW205", Severity: SevMedium, Category: CatState,
 			Title:       "Tainted resources will be replaced",
 			Detail:      fmt.Sprintf("%d resources are tainted (usually from a failed create). The next apply destroys and recreates them.", len(tainted)),
-			Remediation: "If the object is actually healthy, terraform untaint it before applying.",
+			Remediation: "Investigate the failed operation's root cause and verify object health before deciding whether replacement is appropriate. Do not clear a taint merely to suppress replacement; any manual state change requires owner review, a protected backup, and a new full plan afterward.",
 			Nodes:       nodeList(tainted),
 		})
 	}

@@ -16,18 +16,21 @@ Non-goals:
 - Calling cloud APIs. A future live mode will be opt-in, read-only and separate.
 - Replacing policy engines (OPA/Sentinel) or cost tools.
 
-The original idea of a "shadow state" that CloudWeave keeps in sync was dropped. Exported snapshots (`terraform state pull`, `terraform show -json`) give the same isolation, and no code path in CloudWeave touches the backend.
+CloudWeave does not keep a shadow backend in sync. It analyzes exported snapshots (`terraform state pull`, `terraform show -json`) or reads a snapshot from Terraform's PostgreSQL backend with a read-only SELECT. Pseudo-apply updates only an in-memory presence model; it never updates state or calls Terraform.
 
 ## Pipeline
 
 ```
- state files ──► state.LoadState ─┐
-                                  ├─► analysis.Analyze ──► report.Build ──► HTML / JSON / terminal
- plan JSON  ──► state.LoadPlan  ──┘
+ state files ──► state.LoadState   ─┐
+ pg backend  ──► state.LoadPGState ─┼─► analysis.Analyze ─► report.Build ─► HTML / JSON / Markdown / terminal
+ plan JSON   ──► state.LoadPlan    ─┘
 ```
 
 1. **Load** (`internal/state`)
    - Raw v4 states and `show -json` states are normalized into one model: resources aggregated across instances, with dependencies, sensitive paths and outputs.
+   - Optional `--pg-state name=ENV_VAR` reads raw JSON text from Terraform's PostgreSQL backend using pgx. The DSN comes only from the named environment variable; labels, schema and workspace are validated, and errors never wrap driver messages or include connection strings. Database inputs have no file path.
+   - PostgreSQL uses `BEGIN READ ONLY`, `SELECT data FROM <quoted-schema>.states WHERE name=$1`, then rollback, with no writes, DDL, commit or advisory locks. Schema is identifier-quoted; workspace is bound via the extended protocol even if the DSN requests simple protocol. Connection-time `target_session_attrs` checks are rejected because they can issue extra SQL. Ordinary PostgreSQL read locks still apply.
+   - Connect/read work has a 15-second deadline; rollback and close each have independent 5-second cleanup deadlines. Schema and workspace flags apply to every PostgreSQL input. Reads are independent snapshots, not an atomic multi-database snapshot. Wire-protocol tests use a loopback fake, not a live database.
    - Plans are parsed with `hashicorp/terraform-json`, plus `applyable`/`errored`, which that library does not expose.
    - From the plan we take resource changes, drift, the refreshed prior state, configuration references (module-aware) and explicit `terraform_remote_state` output references.
 2. **Analyze** (`internal/analysis`)
@@ -53,7 +56,8 @@ The original idea of a "shadow state" that CloudWeave keeps in sync was dropped.
       - Per-seed impact counts include cross-state counts.
    7. Run plan, drift, blast-radius, state-hygiene and (optionally) credential checks.
    8. **Apply order**: collapse cross-state edges (excluding low-confidence and federation edges, since trust can be wired in either order) into a state graph and order it topologically. Cycles raise CW504.
-   9. Sort findings and derive the verdict.
+   9. **Pseudo-apply**: copy resource presence into an in-memory model; build a deterministic operation DAG from recorded plan actions and same-state dependency edges. Preserve replacement phase order, reverse destroy dependencies and retain objects for forget operations. Unchanged resources can connect operations. Cycles, mixed instance actions and deposed objects stay unresolved. Model failures do not transition objects; dependent operations become blocked. Cross-state consumers, federation, IAM propagation and credential expiry are conditional warnings, not observed failures. Other states get follow-up planning reminders only.
+   10. Attach static fix templates using placeholders, not values or executable interpolated metadata. Add CW601 for model failures/unresolved operations, sort findings and derive the verdict.
 3. **Report** (`internal/report`)
    - A JSON schema (`cloudweave.report/v1`) carries metadata only.
    - The HTML file embeds that JSON in a non-executable script tag and renders it with vanilla JS/SVG.
@@ -67,26 +71,11 @@ Attributes that Terraform marks sensitive (`before_sensitive` / `after_sensitive
 
 ## Visualizing huge states
 
-A full-graph render of an 80k-line state is useless. The report never draws everything:
+One graph page replaces the previous tabs. With a plan it starts with changed/impacted resources and direct dependencies; without a plan it shows a bounded graph grouped by state. Search covers the full metadata inventory and focuses a neighborhood on the same canvas. The total rendered node count is bounded by `--max-nodes`, with hidden counts shown.
 
-- **State map**: one box per state, with aggregated cross-state edges.
-- **Plan changes**: only changed and drifted resources, in a state → module tree (module paths split with the bracket-aware parser), each with its reason.
-- **Change cone**: only the plan's seeds and their impact, layered by distance, with depth and state filters.
-- **Explore**: radius-limited neighborhood of one resource, with dependencies left and dependents right.
-- **Inventory**: lazily expanded tree (state → module → type → resource).
+A side panel holds all findings (including global findings), resource explanations, display-only fix templates, and the pseudo-apply timeline. State filters and graph reset keep navigation on one page. The header's state order is advisory, not an execution schedule.
 
-Each column is capped (`--max-nodes`) with "+N more". A synthetic 612k-line (15 MB) state analyzes in about 3 seconds and yields a ~130 KB report.
-
-Graph views pan and zoom with a single SVG transform rather than re-layout, so moving around stays cheap. Hovering a node fades everything except its direct neighbours. SVG export clones the current graph, removes the view transform and inlines the few styles it needs, so the file renders on its own.
-
-### Design borrowed from existing tools
-
-Two shipped visualizers were reverse engineered with REA to choose these interactions:
-
-- [Rover](https://github.com/im2nguyen/rover) v0.3.3, a Go binary with an embedded Vue + Cytoscape UI, contributed the neighbourhood fade on focus and SVG export.
-- Terraform Visual 0.2.1, a Next.js app using AntV G6, contributed the collapsible module tree of plan changes.
-
-Neither tool links multiple states.
+Pan and zoom use a single SVG transform. Hovering traces neighbors; SVG export inlines styles so it renders independently. The implementation remains original vanilla JS/SVG, with no embedded third-party visualizer.
 
 ## Edge cases handled
 

@@ -13,8 +13,8 @@ import (
 
 const Schema = "cloudweave.report/v1"
 
-const disclaimer = "CloudWeave is a read-only preflight. It never writes, locks or pushes state and makes no cloud API calls. " +
-	"A clean report lowers risk but cannot guarantee that terraform apply succeeds."
+const disclaimer = "CloudWeave is a read-only preflight. It never writes or pushes state, takes Terraform locks, or makes cloud API calls. " +
+	"Fixes are suggestions only. Pseudo-apply is an offline model, not a guarantee that terraform apply succeeds."
 
 // Report is the serialized analysis. It contains resource metadata, never
 // attribute values.
@@ -30,6 +30,7 @@ type Report struct {
 	Findings    []analysis.Finding      `json:"findings"`
 	Seeds       []string                `json:"seeds"`
 	ApplyOrder  []string                `json:"apply_order,omitempty"`
+	Simulation  *analysis.Simulation    `json:"simulation,omitempty"`
 	Nodes       []*analysis.Node        `json:"nodes"`
 	Edges       []analysis.Edge         `json:"edges"`
 	MaxNodes    int                     `json:"max_nodes"`
@@ -48,6 +49,7 @@ func Build(res *analysis.Result, toolVersion string, maxNodes int) *Report {
 		Findings:    res.Findings,
 		Seeds:       res.Seeds,
 		ApplyOrder:  res.ApplyOrder,
+		Simulation:  res.Simulation,
 		Nodes:       res.Graph.SortedNodes(),
 		Edges:       res.Graph.Edges,
 		MaxNodes:    maxNodes,

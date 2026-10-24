@@ -96,6 +96,42 @@ func TestMarkdownEscapesAndHidesValues(t *testing.T) {
 	}
 }
 
+func TestSimulationAndFixesInReports(t *testing.T) {
+	st := &state.State{Name: "s"}
+	st.AddResource(&state.Resource{Address: "null_resource.test", Mode: "managed", Type: "null_resource", Instances: []state.Instance{{Attributes: map[string]any{"id": "secret-identifier-sentinel"}}}})
+	p := &state.Plan{Changes: []state.Change{{Address: "null_resource.test", Action: state.ActionDelete, Actions: []string{state.ActionDelete}, ActionReason: "delete_because_no_resource_config"}}}
+	res, err := analysis.Analyze([]*state.State{st}, p, analysis.Options{PrimaryState: "s"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := Build(res, "test", 20)
+	if r.Simulation == nil || len(r.Simulation.Steps) != 1 || r.Simulation.Steps[0].After != "absent" {
+		t.Fatalf("simulation lost: %+v", r.Simulation)
+	}
+	for _, writer := range []func(*bytes.Buffer) error{
+		func(b *bytes.Buffer) error { return WriteHTML(b, r) },
+		func(b *bytes.Buffer) error { return WriteJSON(b, r) },
+		func(b *bytes.Buffer) error { return WriteMarkdown(b, r) },
+	} {
+		var buf bytes.Buffer
+		if err := writer(&buf); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(buf.String(), "secret-identifier-sentinel") {
+			t.Fatal("value leaked")
+		}
+	}
+	var found bool
+	for _, f := range r.Findings {
+		if f.Rule == "CW206" && len(f.Fix) > 0 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("remediation missing from report")
+	}
+}
+
 func TestJSONHasNoAttributeValues(t *testing.T) {
 	st := &state.State{Name: "s"}
 	st.AddResource(&state.Resource{

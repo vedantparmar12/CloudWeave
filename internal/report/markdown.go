@@ -55,7 +55,10 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 		for i, s := range r.ApplyOrder {
 			order[i] = mdCode(s)
 		}
-		fmt.Fprintf(&b, "\n**Apply order across states:** %s\n", strings.Join(order, " → "))
+		fmt.Fprintf(&b, "\n**Suggested state order (not an execution schedule):** %s\n", strings.Join(order, " → "))
+	}
+	if s := r.Simulation; s != nil {
+		fmt.Fprintf(&b, "\n**Pseudo-apply:** %d modeled operations/follow-ups · %d model failures · %d warnings · %d unresolved. Offline predictions only; see the HTML/JSON report for steps and limitations.\n", len(s.Steps), s.Fails, s.Warns, s.Blocked)
 	}
 
 	fmt.Fprintf(&b, "\n### Findings (%d)\n\n", len(r.Findings))

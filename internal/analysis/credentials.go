@@ -302,6 +302,7 @@ func (a *analyzer) checkExpiry(label string, c jwtClaims) {
 	}
 	exp := time.Unix(c.Exp, 0).UTC()
 	left := exp.Sub(a.opts.Now)
+	a.noteCredential(left)
 	switch {
 	case left <= 0:
 		a.add(Finding{

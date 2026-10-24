@@ -54,13 +54,14 @@ const (
 // Finding is one preflight observation. It never contains attribute values;
 // identifiers in Detail are masked unless the caller opts in.
 type Finding struct {
-	Rule        string   `json:"rule"`
-	Severity    Severity `json:"severity"`
-	Category    string   `json:"category"`
-	Title       string   `json:"title"`
-	Detail      string   `json:"detail,omitempty"`
-	Remediation string   `json:"remediation,omitempty"`
-	Nodes       []string `json:"nodes,omitempty"`
+	Rule        string    `json:"rule"`
+	Severity    Severity  `json:"severity"`
+	Category    string    `json:"category"`
+	Title       string    `json:"title"`
+	Detail      string    `json:"detail,omitempty"`
+	Remediation string    `json:"remediation,omitempty"`
+	Fix         []FixStep `json:"fix,omitempty"`
+	Nodes       []string  `json:"nodes,omitempty"`
 }
 
 func sortFindings(fs []Finding) {

@@ -528,7 +528,7 @@ func (a *analyzer) checkFederationChanges() {
 			Title: "Plan deletes or replaces identity federation resources",
 			Detail: "Replacing a service account, managed identity, pool or provider changes its unique/principal ID or trust configuration. " +
 				"Anything authenticating through it (including Terraform providers in this or other states) fails mid-apply, and other states that reference the old ID break until re-applied.",
-			Remediation: "Apply federation changes in a separate, earlier run; update dependent subjects/audiences in other states; avoid replacing identities that are referenced by ID.",
+			Remediation: "Verify independent working credentials that do not rely on the changing identity or trust before staging parallel identities with reviewed full, non-targeted plans. Retain the old identity and trust in configuration until all consumers have migrated and verified token exchange and required API authorization; never use targeted federation changes as a shortcut.",
 			Nodes:       destructive,
 		})
 	}
@@ -546,7 +546,7 @@ func (a *analyzer) checkFederationChanges() {
 			Rule: "CW313", Severity: SevLow, Category: CatSTS,
 			Title:       "Plan creates IAM grants that are eventually consistent",
 			Detail:      "New GCP IAM bindings and Azure role assignments can take minutes to propagate. Resources in the same apply that rely on them may fail with 403 even though the plan succeeded.",
-			Remediation: "Add explicit depends_on plus a time_sleep, or apply grants in a separate run.",
+			Remediation: "Separate new grants from dependent operations into reviewed stages using independent working credentials with existing permissions. Verify the workload's actual token exchange and required API authorization before a full, non-targeted dependent plan; neither depends_on nor a fixed sleep guarantees propagation.",
 			Nodes:       grants,
 		})
 	}

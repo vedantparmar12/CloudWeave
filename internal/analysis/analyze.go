@@ -85,6 +85,7 @@ type Result struct {
 	Findings    []Finding      `json:"findings"`
 	Seeds       []string       `json:"seeds"`
 	ApplyOrder  []string       `json:"apply_order,omitempty"`
+	Simulation  *Simulation    `json:"simulation,omitempty"`
 	Graph       *Graph         `json:"-"`
 }
 
@@ -97,6 +98,8 @@ type analyzer struct {
 	findings []Finding
 	// changed outputs of the primary state consumed by other states
 	remoteLinks []remoteLink
+	credLeft    *time.Duration
+	order       []string
 }
 
 // Analyze runs every read-only check. It never modifies inputs on disk.
@@ -127,7 +130,21 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 	if a.opts.CheckCredentials {
 		a.checkCredentials()
 	}
-	order := a.applyOrder()
+	a.order = a.applyOrder()
+	sim := a.simulate()
+	if sim != nil && sim.Fails+sim.Blocked > 0 {
+		var nodes []string
+		for _, step := range sim.Steps {
+			if step.Node != "" && (step.Outcome == OutcomeFail || step.Outcome == OutcomeBlocked) {
+				nodes = appendUniqueStr(nodes, step.Node)
+			}
+		}
+		a.add(Finding{Rule: "CW601", Severity: SevHigh, Category: CatPlan,
+			Title:       "Pseudo-apply found an unavailable dependency or unresolved order",
+			Detail:      "The offline model cannot complete these operations. This is a prediction, not an observed cloud failure; inspect the simulation limitations.",
+			Remediation: "Review the affected dependency paths and per-instance actions in a fresh full plan before applying.", Nodes: nodes})
+	}
+	a.addFixes()
 
 	sortFindings(a.findings)
 	res := &Result{
@@ -135,7 +152,8 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 		Verdict:     Verdict(a.findings),
 		Findings:    a.findings,
 		Seeds:       seeds,
-		ApplyOrder:  order,
+		ApplyOrder:  a.order,
+		Simulation:  sim,
 		Graph:       a.g,
 	}
 	if res.Findings == nil {

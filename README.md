@@ -4,7 +4,7 @@
 
 CloudWeave reads Terraform state and plan JSON offline and answers the questions `terraform plan` doesn't:
 
-- **What is this 80k-line state?** It gives you a single self-contained HTML report with a state map, a plan-change tree that says *why* each resource changes, the plan's change cone, a searchable neighborhood explorer and an inventory tree. It also writes a Markdown summary for PR comments. It works without Terraform, a backend or a cloud login.
+- **What is this 80k-line state?** One self-contained graph page with search, a suggested state order, and a resource side panel explaining changes, findings and fix steps. Local snapshots work without Terraform or cloud credentials; an optional read-only PostgreSQL input reads Terraform's `pg` backend directly.
 - **Why did plan succeed but apply fail?** It flags drift that overlaps or feeds planned changes, resources deleted out of band, stale saved plans, plan/state mismatch, version skew, eventually-consistent IAM grants and credentials that expire mid-apply.
 - **What breaks in my *other* states?** It stitches several states together through `terraform_remote_state` outputs, shared resource IDs and Azure ↔ GCP identity federation. A replacement in one state then shows up as an impact in the others, and CloudWeave tells you which state to apply first.
 - **Will the cross-cloud trust chain still work?** It runs static checks of GCP Workload Identity Federation and Entra ID federated credentials: issuer, audience, subject, attribute mapping/condition, disabled pools and replaced identities.
@@ -33,9 +33,9 @@ CloudWeave is built to run against production state before an apply:
 
 | Guarantee | How |
 |---|---|
-| Never modifies state | It only reads files you pass. It has no `state push`, no backend client and no lock handling. It refuses to write a report onto any input file or anything named `*.tfstate*`. |
-| Never holds the lock | It never talks to a backend. You export snapshots yourself with `terraform state pull` (read-only, lock-free). |
-| No cloud calls, no telemetry | It needs no network access at all. |
+| Never modifies state | Local files are only read. Optional PostgreSQL input uses a read-only transaction and a parameterized SELECT, then rolls back. No state pushes or SQL writes. Report paths cannot overwrite input files or `*.tfstate*` names. |
+| Never takes Terraform locks | No Terraform locking or PostgreSQL advisory locks. A SELECT takes PostgreSQL's ordinary read locks, not Terraform's state lock. Use a SELECT-only database role for defense in depth. |
+| No cloud calls, no telemetry | File analysis and reports work offline. Only an explicitly requested PostgreSQL input makes a database connection. |
 | No secrets in reports | Reports contain addresses, types, actions, counts, edges and changed attribute *names*, never attribute values. Attributes Terraform marks sensitive are not even named, only counted. Sensitive paths are skipped during matching. Identifiers in finding text are masked (`c0ff…89ab`) unless you pass `--reveal-ids`. Credential checks decode JWT claims locally and never print tokens. |
 | Private output | Reports are written with mode `0600`. The HTML report has a strict CSP, loads nothing external, and embeds data as escaped JSON rendered only via `textContent`. |
 
@@ -72,6 +72,9 @@ cloudweave analyze \
 | Flag | Default | Meaning |
 |---|---|---|
 | `-s, --state [name=]path` | | State file, repeatable. The name labels it in the report. |
+| `--pg-state name=ENV_VAR` | | Read a Terraform `pg` backend; the environment variable holds the connection string. Repeatable; can mix with files. |
+| `--pg-schema name` | `terraform_remote_state` | Backend schema shared by all `--pg-state` inputs. |
+| `--pg-workspace name` | `default` | Terraform workspace shared by all `--pg-state` inputs. |
 | `-p, --plan path` | | Plan JSON from `terraform show -json`. |
 | `--primary-state name` | auto | State the plan applies to. Auto-detected by matching resource IDs with the plan's prior state. |
 | `-o, --out path` | | Self-contained HTML report. |
@@ -87,6 +90,25 @@ cloudweave analyze \
 | `-q, --quiet` | off | No terminal summary. |
 
 Exit codes: `0` success, `1` usage or input error, `2` findings at or above `--fail-on`.
+
+### PostgreSQL backend
+
+Have your approved secret manager or CI secret injection populate `TF_PG_DSN` with the PostgreSQL connection string. Do not paste credentials into command arguments or shell history. Use a dedicated role limited to connecting, schema usage and SELECT on the backend's `states` table; prefer `sslmode=verify-full` with a trusted root certificate for remote connections.
+
+```sh
+# Graph and findings from the existing Terraform pg backend; no plan required.
+cloudweave analyze --pg-state prod=TF_PG_DSN --out report.html
+
+# Add a saved plan and another state for impact analysis and pseudo-apply.
+cloudweave analyze \
+  --pg-state prod=TF_PG_DSN --pg-schema terraform_remote_state --pg-workspace default \
+  --state shared=shared.tfstate --primary-state prod \
+  --plan plan.json --out report.html
+```
+
+`prod` is only the report label, not the Terraform workspace. `--pg-schema` and `--pg-workspace` apply to **all** PostgreSQL inputs in one invocation. The reader expects Terraform's `states` table with `name` and raw JSON text `data`; it does not create tables, decode base64 or migrate the backend. Different databases are read independently, not as one atomic snapshot.
+
+The reader begins a read-only transaction, selects the workspace using a bound parameter, then rolls back. It never takes Terraform advisory locks; PostgreSQL still takes normal read locks. Connect/read work has a 15-second deadline, with bounded cleanup afterward. `target_session_attrs` configurations that require extra connection-time SQL are rejected. Connection and parse errors omit driver details and credentials. Automated tests use a local fake PostgreSQL protocol server; a live PostgreSQL integration has not been verified.
 
 ### CI example
 
@@ -118,16 +140,20 @@ Subject tokens are decoded without signature verification, only to compare `exp`
 
 ## The report
 
-| Tab | What it shows |
-|---|---|
-| Overview | Verdict, key numbers, a plan action bar, the safe apply order across states, top findings, a map of states with aggregated cross-state links, and a table of every cross-state edge with its evidence and confidence. |
-| Plan changes | Every changed or drifted resource in a collapsible state → module tree, with per-module action counts, action toggles and a filter. Each row says *why*: attributes that force replacement, attributes that change, values known only after apply, and Terraform's action reason. |
-| Findings | All findings, filterable by severity and category, with remediation and links to the affected resources. |
-| Change cone | Changed and drifted resources, everything transitively impacted (across states), and optionally their direct dependencies, laid out by distance. |
-| Explore | Search any address, type or module (press `/`), then walk its neighborhood: dependencies on the left, dependents on the right. |
-| Inventory | State → module → type tree, lazily expanded, so huge states stay fast. |
+There are no tabs: just the graph and a side panel.
 
-Colors encode cloud (stripe), planned action (border) and drift (dotted). Edge style encodes the kind of link: dependency, remote-state, id-match or federation. In graph views, scroll to zoom, drag to pan and hover a resource to fade everything except its direct neighbours (dashed edges lead to dependents). **Export SVG** saves the current graph as a standalone file for docs or tickets.
+- With a plan, the graph starts with changed resources, their dependencies and impact. Without a plan, it shows a bounded state graph.
+- Search any resource (press `/`) and open its neighborhood on the same canvas. Reset restores the starting graph; the state filter narrows it.
+- Select a resource for its change explanation, findings, suggested fix templates and modeled operations. All findings remain accessible, including findings with no resource.
+- Scroll to zoom, drag to pan, hover to trace neighbors, and export a standalone SVG.
+
+**Pseudo apply** replays the supplied plan on an in-memory resource model. It preserves recorded create-before-destroy or destroy-before-create phases, reverses dependency order for deletes, and exposes unresolved cycles. It flags absent dependencies, possibly broken consumers, federation changes, IAM propagation and credential lifetime risks. Other states receive follow-up planning reminders, not fabricated applies.
+
+The step list shows before/after presence, warnings and limitations. It is not Terraform's execution engine: provider behavior, real timing, credential refresh and live infrastructure are unknown. Mixed instance actions and deposed objects remain unresolved. `ok` means no modeled issue, not a guarantee; `fail` means a model failure, not an observed cloud failure. CW601 brings model failures and unresolved steps into the review verdict and `--fail-on` checks.
+
+Fix templates use placeholders rather than secrets or interpolated input. Review and adapt them before use; CloudWeave never runs commands, changes authentication or applies fixes. Suggestions involving state ownership or trust changes require coordination. A fixed IAM wait or `create_before_destroy` alone cannot guarantee a safe cross-state migration.
+
+The header's suggested state order ignores low-confidence and federation links. It is a planning aid, not an apply execution schedule.
 
 ## Rules
 
@@ -178,6 +204,7 @@ Colors encode cloud (stripe), planned action (border) and drift (dotted). Edge s
 | CW502 | medium | Consumer holds a stale copy of producer outputs |
 | CW503 | high | Same cloud resource managed by two states |
 | CW504 | medium | States depend on each other in a cycle, so no safe apply order exists |
+| CW601 | high | Pseudo-apply model has missing dependencies or unresolved operations |
 
 ## Limits
 

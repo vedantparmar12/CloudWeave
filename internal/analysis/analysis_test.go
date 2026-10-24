@@ -266,6 +266,83 @@ func TestCredentialChecks(t *testing.T) {
 	}
 }
 
+func TestSimulation(t *testing.T) {
+	states, plan := loadFixtures(t)
+	res, err := Analyze(states, plan, Options{Now: planTime, Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	sim := res.Simulation
+	if sim == nil {
+		t.Fatal("no simulation")
+	}
+	byNode := map[string]SimStep{}
+	for _, s := range sim.Steps {
+		byNode[s.Node] = s
+	}
+	ident := byNode["azure::azurerm_user_assigned_identity.workload"]
+	if ident.Outcome != OutcomeWarn {
+		t.Errorf("identity replacement must be a conditional warning: %+v", ident)
+	}
+	if fic := byNode["azure::azurerm_federated_identity_credential.aks_workload"]; fic.Step <= ident.Step {
+		t.Errorf("FIC creation should run after the identity it references: %d <= %d", fic.Step, ident.Step)
+	}
+	if aks := byNode["azure::azurerm_kubernetes_cluster.aks"]; aks.Outcome != OutcomeWarn {
+		t.Errorf("AKS drift should be flagged: %+v", aks)
+	}
+	last := sim.Steps[len(sim.Steps)-1]
+	if last.State != "gcp" || last.Action != "re-plan" {
+		t.Errorf("last step should re-plan gcp: %+v", last)
+	}
+	if len(sim.Limitations) == 0 || sim.Warns == 0 {
+		t.Errorf("simulation must declare uncertainty: %+v", sim)
+	}
+
+	now := time.Now().UTC()
+	token := jwt(map[string]any{"exp": now.Add(10 * time.Minute).Unix()})
+	res, _ = Analyze(states, plan, Options{Now: now, CheckCredentials: true, ApplyWindow: time.Hour,
+		Getenv: func(k string) string {
+			if k == "ARM_OIDC_TOKEN" {
+				return token
+			}
+			return ""
+		}})
+	expired := 0
+	for _, s := range res.Simulation.Steps {
+		if strings.Contains(strings.Join(s.Notes, " "), "credential expires") {
+			expired++
+			if s.Outcome != OutcomeWarn {
+				t.Error("token timing must remain a warning without per-step durations")
+			}
+		}
+	}
+	if expired == 0 {
+		t.Error("token lifetime risk should be visible")
+	}
+}
+
+func TestFixSteps(t *testing.T) {
+	states, plan := loadFixtures(t)
+	res, err := Analyze(states, plan, Options{Now: planTime, Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+	fix := map[string]string{}
+	for _, f := range res.Findings {
+		for _, s := range f.Fix {
+			fix[f.Rule] += s.Text + "\n" + s.Code + "\n"
+		}
+	}
+	for _, rule := range []string{"CW206", "CW201", "CW305", "CW313", "CW312"} {
+		if strings.TrimSpace(fix[rule]) == "" {
+			t.Errorf("%s has no remediation steps", rule)
+		}
+	}
+	if !strings.Contains(fix["CW305"], `https://sts.windows.net/<tenant-id>/`) {
+		t.Error("Azure issuer template must retain its trailing slash")
+	}
+}
+
 func TestParseMember(t *testing.T) {
 	pool := "projects/1/locations/global/workloadIdentityPools/p"
 	tests := []struct{ in, kind, value string }{

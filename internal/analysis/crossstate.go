@@ -329,7 +329,7 @@ func (a *analyzer) linkByIdentity(idx map[string][]owner) {
 			Title:    "Same cloud resource managed by two states",
 			Detail: fmt.Sprintf("%s and %s track the same resource ID. Applying either state can silently revert the other, and a destroy in one deletes infrastructure the other still owns.",
 				k.a, k.b),
-			Remediation: "Keep the resource in one state and remove it from the other with a `removed` block (Terraform ≥1.7) or `terraform state rm` after taking a backup.",
+			Remediation: "Choose one authoritative owner and keep its configuration and state entry intact; never remove every owner. Pause competing runs, take protected backups, and review non-destructive removal only in the relinquishing state, then replan both states to confirm exactly one owner and no destruction or recreation.",
 			Nodes:       []string{k.a, k.b},
 		})
 	}

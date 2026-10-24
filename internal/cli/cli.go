@@ -2,6 +2,7 @@
 package cli
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -46,8 +47,9 @@ func newRoot(version string, stdout, stderr io.Writer) *cobra.Command {
 	root := &cobra.Command{
 		Use:   "cloudweave",
 		Short: "Read-only Terraform preflight: drift, blast radius, cross-state and STS federation checks",
-		Long: "CloudWeave analyzes Terraform state and plan JSON files offline before terraform apply.\n" +
-			"It never writes, locks or pushes state, makes no cloud API calls and sends no telemetry.",
+		Long: "CloudWeave analyzes local Terraform JSON files or PostgreSQL backend state before terraform apply.\n" +
+			"It never writes or pushes state, takes no Terraform advisory locks, makes no cloud API calls and sends no telemetry.\n" +
+			"PostgreSQL reads still acquire normal database read locks.",
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -71,6 +73,9 @@ func newVersion(version string) *cobra.Command {
 
 type analyzeFlags struct {
 	states           []string
+	pgStates         []string
+	pgSchema         string
+	pgWorkspace      string
 	plan             string
 	primary          string
 	htmlOut          string
@@ -90,17 +95,21 @@ func newAnalyze(version string) *cobra.Command {
 	f := &analyzeFlags{}
 	cmd := &cobra.Command{
 		Use:   "analyze",
-		Short: "Analyze state and plan files and write a report",
+		Short: "Analyze local or PostgreSQL state and plan files and write a report",
 		Example: `  terraform state pull > azure.tfstate
   terraform plan -out tfplan && terraform show -json tfplan > plan.json
-  cloudweave analyze --state azure=azure.tfstate --state gcp=gcp.tfstate --plan plan.json --out report.html`,
+  cloudweave analyze --state azure=azure.tfstate --state gcp=gcp.tfstate --plan plan.json --out report.html
+  cloudweave analyze --pg-state prod=TF_PG_DSN --state gcp=gcp.tfstate --plan plan.json --out report.html`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return runAnalyze(cmd.OutOrStdout(), version, f)
+			return runAnalyze(cmd.Context(), cmd.OutOrStdout(), version, f)
 		},
 	}
 	fl := cmd.Flags()
 	fl.StringArrayVarP(&f.states, "state", "s", nil, "state file as [name=]path (raw .tfstate or `terraform show -json`); repeatable")
+	fl.StringArrayVar(&f.pgStates, "pg-state", nil, "PostgreSQL state as name=ENV_VAR; DSN only from that environment variable; repeatable")
+	fl.StringVar(&f.pgSchema, "pg-schema", state.DefaultPGSchema, "PostgreSQL backend schema for all --pg-state inputs")
+	fl.StringVar(&f.pgWorkspace, "pg-workspace", state.DefaultPGWorkspace, "PostgreSQL backend workspace for all --pg-state inputs")
 	fl.StringVarP(&f.plan, "plan", "p", "", "plan JSON from `terraform show -json tfplan`")
 	fl.StringVar(&f.primary, "primary-state", "", "name or path of the state the plan applies to (auto-detected by default)")
 	fl.StringVarP(&f.htmlOut, "out", "o", "", "write a self-contained HTML report to this path")
@@ -117,7 +126,7 @@ func newAnalyze(version string) *cobra.Command {
 	return cmd
 }
 
-func runAnalyze(stdout io.Writer, version string, f *analyzeFlags) error {
+func runAnalyze(ctx context.Context, stdout io.Writer, version string, f *analyzeFlags) error {
 	var failOn analysis.Severity = -1
 	if !strings.EqualFold(strings.TrimSpace(f.failOn), "none") {
 		s, err := analysis.ParseSeverity(f.failOn)
@@ -126,8 +135,8 @@ func runAnalyze(stdout io.Writer, version string, f *analyzeFlags) error {
 		}
 		failOn = s
 	}
-	if len(f.states) == 0 && f.plan == "" {
-		return errors.New("provide at least one --state or a --plan")
+	if len(f.states) == 0 && len(f.pgStates) == 0 && f.plan == "" {
+		return errors.New("provide at least one --state, --pg-state or a --plan")
 	}
 	if f.maxNodes <= 0 {
 		return errors.New("--max-nodes must be positive")
@@ -172,6 +181,16 @@ func runAnalyze(stdout io.Writer, version string, f *analyzeFlags) error {
 		return errors.New("--out needs a file path; the HTML report is not written to stdout")
 	}
 
+	// Retain only file paths in inputs for overwrite protection. PG DSNs and
+	// environment names must never become state paths or report metadata.
+	for _, spec := range f.pgStates {
+		st, err := state.LoadPGState(ctx, spec, f.pgSchema, f.pgWorkspace)
+		if err != nil {
+			return err
+		}
+		states = append(states, st)
+	}
+
 	res, err := analysis.Analyze(states, plan, analysis.Options{
 		PrimaryState:     f.primary,
 		PlanMaxAge:       f.planMaxAge,
@@ -184,6 +203,9 @@ func runAnalyze(stdout io.Writer, version string, f *analyzeFlags) error {
 		return err
 	}
 	rep := report.Build(res, version, f.maxNodes)
+	if len(f.pgStates) > 0 {
+		rep.Disclaimer += " PostgreSQL reads still acquire normal database read locks, not Terraform advisory locks."
+	}
 
 	if f.htmlOut != "" {
 		if err := writeFile(f.htmlOut, func(w io.Writer) error { return report.WriteHTML(w, rep) }); err != nil {
