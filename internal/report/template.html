@@ -1,0 +1,455 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; img-src data:">
+<title>CloudWeave preflight report</title>
+<style>
+:root{--bg:#0f1419;--panel:#161d26;--panel2:#1d2631;--line:#2a3542;--text:#d8dee6;--muted:#8a96a6;
+--crit:#ff4d6d;--high:#ff8c42;--med:#f6c344;--low:#5fb3f9;--info:#8a96a6;
+--azure:#3b8eea;--gcp:#34a853;--aws:#ff9900;--k8s:#8c6cf0;--other:#7d8794;
+--create:#3fb950;--update:#d29922;--delete:#f85149;--replace:#db61a2;--drift:#ff8c42}
+*{box-sizing:border-box}
+body{margin:0;font:13px/1.45 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text)}
+header{display:flex;align-items:center;gap:14px;padding:12px 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+header h1{font-size:17px;margin:0;font-weight:600}
+.badge{padding:3px 10px;border-radius:12px;font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.4px}
+.v-block{background:var(--crit);color:#fff}.v-review{background:var(--high);color:#111}
+.v-caution{background:var(--med);color:#111}.v-clear{background:var(--create);color:#111}
+.muted{color:var(--muted)}.small{font-size:12px}
+.ro{margin-left:auto;font-size:12px;color:var(--muted)}
+nav{display:flex;gap:2px;padding:0 20px;background:var(--panel);border-bottom:1px solid var(--line)}
+nav button{background:none;border:0;color:var(--muted);padding:10px 14px;cursor:pointer;font:inherit;border-bottom:2px solid transparent}
+nav button.active{color:var(--text);border-bottom-color:var(--low)}
+.layout{display:flex;height:calc(100vh - 92px)}
+main{flex:1;overflow:auto;padding:16px 20px}
+aside{width:340px;border-left:1px solid var(--line);background:var(--panel);overflow:auto;padding:14px 16px}
+.tab{display:none}.tab.active{display:block}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;margin-bottom:16px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px}
+.card .n{font-size:22px;font-weight:600}.card .l{color:var(--muted);font-size:12px}
+h2{font-size:14px;margin:18px 0 8px;font-weight:600}
+.sev{display:inline-block;min-width:62px;text-align:center;padding:1px 6px;border-radius:4px;font-size:11px;font-weight:600;text-transform:uppercase}
+.sev-critical{background:var(--crit);color:#fff}.sev-high{background:var(--high);color:#111}
+.sev-medium{background:var(--med);color:#111}.sev-low{background:var(--low);color:#111}.sev-info{background:var(--line);color:var(--text)}
+.finding{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 12px;margin-bottom:8px}
+.finding .t{font-weight:600;margin-left:6px}.finding .rule{color:var(--muted);font-size:11px;margin-left:6px}
+.finding p{margin:6px 0 0}.finding .fix{color:#9fd3a8}
+.chips{display:flex;flex-wrap:wrap;gap:4px;margin-top:6px}
+.chip{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:1px 8px;font-size:11px;cursor:pointer;color:var(--text);font-family:ui-monospace,Consolas,monospace}
+.chip:hover{border-color:var(--low)}
+.toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:10px}
+.toolbar label{display:flex;gap:4px;align-items:center;color:var(--muted)}
+input[type=search],select{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:5px 8px;font:inherit}
+input[type=search]{width:340px}
+button.b{background:var(--panel2);color:var(--text);border:1px solid var(--line);border-radius:6px;padding:4px 10px;cursor:pointer;font:inherit}
+.graph{border:1px solid var(--line);border-radius:8px;background:#0b1015;overflow:auto;height:calc(100vh - 210px)}
+.graph svg{display:block}
+.node rect{rx:6;ry:6}
+.node{cursor:pointer}
+.node text{fill:var(--text);font-size:11px;font-family:ui-monospace,Consolas,monospace;pointer-events:none}
+.node text.sub{fill:var(--muted);font-family:inherit;font-size:10px}
+.node.sel rect.box{stroke:#fff;stroke-width:2.5}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:11px;color:var(--muted);margin-bottom:8px}
+.legend span i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+table{border-collapse:collapse;width:100%}
+td,th{border-bottom:1px solid var(--line);padding:5px 8px;text-align:left;vertical-align:top}
+th{color:var(--muted);font-weight:500}
+.mono{font-family:ui-monospace,Consolas,monospace;font-size:12px;word-break:break-all}
+details{margin:2px 0}summary{cursor:pointer;padding:2px 0}
+.inv{margin-left:16px}
+.results{max-height:180px;overflow:auto;margin-bottom:10px}
+.results div{padding:3px 6px;cursor:pointer;border-radius:4px}
+.results div:hover{background:var(--panel2)}
+.kv{display:grid;grid-template-columns:90px 1fr;gap:3px 8px;margin:8px 0}
+.kv div:nth-child(odd){color:var(--muted)}
+.empty{color:var(--muted);padding:30px;text-align:center}
+.disclaimer{font-size:12px;color:var(--muted);border-left:3px solid var(--med);padding:6px 10px;background:var(--panel);margin:10px 0}
+</style>
+</head>
+<body>
+<header>
+  <h1>CloudWeave</h1>
+  <span id="verdict" class="badge"></span>
+  <span id="gen" class="muted small"></span>
+  <span class="ro">Read-only preflight · no state writes · no cloud calls</span>
+</header>
+<nav id="tabs">
+  <button data-tab="overview" class="active">Overview</button>
+  <button data-tab="findings">Findings</button>
+  <button data-tab="cone">Change cone</button>
+  <button data-tab="explore">Explore</button>
+  <button data-tab="inventory">Inventory</button>
+</nav>
+<div class="layout">
+<main>
+  <section id="tab-overview" class="tab active">
+    <div id="cards" class="cards"></div>
+    <div id="disclaimer" class="disclaimer"></div>
+    <h2>Top findings</h2>
+    <div id="top-findings"></div>
+    <h2>State map</h2>
+    <div class="muted small">Each box is a state. Lines are dependencies discovered across states (remote state outputs, shared IDs, identity federation).</div>
+    <div id="state-map"></div>
+    <div id="cross-table"></div>
+  </section>
+  <section id="tab-findings" class="tab">
+    <div class="toolbar">
+      <label>Min severity <select id="f-sev"></select></label>
+      <label>Category <select id="f-cat"></select></label>
+      <span id="f-count" class="muted"></span>
+    </div>
+    <div id="findings"></div>
+  </section>
+  <section id="tab-cone" class="tab">
+    <div class="toolbar">
+      <label>State <select id="c-state"></select></label>
+      <label><input type="checkbox" id="c-up" checked> show direct dependencies</label>
+      <label>Max depth <select id="c-depth"><option>1</option><option>2</option><option selected>3</option><option>5</option><option value="99">all</option></select></label>
+      <button class="b" data-zoom="cone" data-z="1.2">+</button><button class="b" data-zoom="cone" data-z="0.83">−</button>
+      <span id="c-info" class="muted"></span>
+    </div>
+    <div id="legend-cone" class="legend"></div>
+    <div id="g-cone" class="graph"></div>
+  </section>
+  <section id="tab-explore" class="tab">
+    <div class="toolbar">
+      <input type="search" id="q" placeholder="Search address, type or module (e.g. google_iam, module.network)">
+      <label>Radius <select id="e-depth"><option>1</option><option selected>2</option><option>3</option></select></label>
+      <button class="b" data-zoom="explore" data-z="1.2">+</button><button class="b" data-zoom="explore" data-z="0.83">−</button>
+      <span id="e-info" class="muted"></span>
+    </div>
+    <div id="results" class="results"></div>
+    <div id="legend-explore" class="legend"></div>
+    <div id="g-explore" class="graph"></div>
+  </section>
+  <section id="tab-inventory" class="tab"><div id="inventory"></div></section>
+</main>
+<aside id="detail"><div class="empty">Select a resource to see its details, dependencies and dependents.</div></aside>
+</div>
+<script id="cw-data" type="application/json">/*CLOUDWEAVE_DATA*/</script>
+<script>
+(function(){
+"use strict";
+var R = JSON.parse(document.getElementById("cw-data").textContent);
+var SEV = ["info","low","medium","high","critical"];
+var NODES = {}, OUT = {}, IN = {};
+R.nodes.forEach(function(n){ NODES[n.id]=n; OUT[n.id]=[]; IN[n.id]=[]; });
+R.edges.forEach(function(e){ if(NODES[e.from]&&NODES[e.to]){ OUT[e.from].push(e); IN[e.to].push(e);} });
+var zoom = {cone:1, explore:1};
+var selected = null, focus = null;
+
+function h(tag, attrs){
+  var el = document.createElement(tag);
+  if (attrs) for (var k in attrs) { if (k==="text") el.textContent = attrs[k]; else if (k==="onclick") el.addEventListener("click", attrs[k]); else el.setAttribute(k, attrs[k]); }
+  for (var i=2;i<arguments.length;i++){ var c=arguments[i]; if(c==null) continue; el.appendChild(typeof c==="string"?document.createTextNode(c):c); }
+  return el;
+}
+function s(tag, attrs){
+  var el = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  if (attrs) for (var k in attrs) { if (k==="text") el.textContent = attrs[k]; else el.setAttribute(k, attrs[k]); }
+  return el;
+}
+function clear(el){ while(el.firstChild) el.removeChild(el.firstChild); return el; }
+function $(id){ return document.getElementById(id); }
+function short(str, n){ return str.length>n ? "…"+str.slice(str.length-n+1) : str; }
+var CLOUD = {azure:"var(--azure)", gcp:"var(--gcp)", aws:"var(--aws)", kubernetes:"var(--k8s)", other:"var(--other)"};
+var ACT = {create:"var(--create)", update:"var(--update)", "delete":"var(--delete)", replace:"var(--replace)", forget:"var(--delete)"};
+var EDGE = {dependency:["#56626f",""], "remote-state":["#3b8eea","6 4"], "id-match":["#a371f7","3 3"], federation:["#ff8c42","8 3"]};
+
+// header
+var vb = $("verdict"); vb.textContent = {block:"Block apply", review:"Review required", caution:"Caution", clear:"No blocking issues"}[R.verdict]||R.verdict;
+vb.className = "badge v-"+R.verdict;
+$("gen").textContent = "generated "+R.generated_at+" · "+R.tool_version;
+$("disclaimer").textContent = R.disclaimer;
+
+// tabs
+var tabs = document.querySelectorAll("#tabs button");
+function showTab(name){
+  tabs.forEach(function(b){ b.classList.toggle("active", b.getAttribute("data-tab")===name); });
+  document.querySelectorAll(".tab").forEach(function(t){ t.classList.toggle("active", t.id==="tab-"+name); });
+  if (name==="cone") renderCone();
+  if (name==="explore") renderExplore();
+}
+tabs.forEach(function(b){ b.addEventListener("click", function(){ showTab(b.getAttribute("data-tab")); }); });
+document.querySelectorAll("[data-zoom]").forEach(function(b){ b.addEventListener("click", function(){
+  var k=b.getAttribute("data-zoom"); zoom[k]=Math.max(0.3,Math.min(3,zoom[k]*parseFloat(b.getAttribute("data-z"))));
+  if(k==="cone") renderCone(); else renderExplore(); }); });
+
+// overview cards
+(function(){
+  var c = $("cards");
+  function card(n,l){ c.appendChild(h("div",{"class":"card"},h("div",{"class":"n",text:String(n)}),h("div",{"class":"l",text:l}))); }
+  var res=0, inst=0; R.states.forEach(function(s){ res+=s.resources; inst+=s.instances; });
+  card(R.states.length, "states");
+  card(res, "managed resources");
+  card(inst, "instances");
+  if (R.plan){
+    var a=R.plan.actions||{};
+    card((a.create||0)+" / "+(a.update||0)+" / "+((a["delete"]||0)+(a.replace||0)), "create / update / delete+replace");
+    card(R.plan.drift, "drifted (refresh)");
+    if (R.plan.age_minutes!=null){
+      var m=R.plan.age_minutes;
+      card(m<120 ? m+" min" : m<2880 ? Math.round(m/60)+" h" : Math.round(m/1440)+" d", "plan age");
+    }
+  }
+  var cross=R.edges.filter(function(e){ return NODES[e.from]&&NODES[e.to]&&NODES[e.from].state!==NODES[e.to].state; }).length;
+  card(cross, "cross-state links");
+  card((R.finding_counts.critical||0)+" / "+(R.finding_counts.high||0)+" / "+(R.finding_counts.medium||0), "critical / high / medium");
+  var top = $("top-findings");
+  var tf = R.findings.filter(function(f){ return SEV.indexOf(f.severity)>=3; }).slice(0,5);
+  if (!tf.length) top.appendChild(h("div",{"class":"muted",text:"No critical or high findings."}));
+  tf.forEach(function(f){ top.appendChild(findingEl(f)); });
+})();
+
+function findingEl(f){
+  var chips = h("div",{"class":"chips"});
+  (f.nodes||[]).slice(0,30).forEach(function(id){ chips.appendChild(h("span",{"class":"chip",title:id,text:short(id,60),onclick:function(){ openNode(id); }})); });
+  if ((f.nodes||[]).length>30) chips.appendChild(h("span",{"class":"muted small",text:"+"+(f.nodes.length-30)+" more"}));
+  return h("div",{"class":"finding"},
+    h("span",{"class":"sev sev-"+f.severity,text:f.severity}), h("span",{"class":"t",text:f.title}), h("span",{"class":"rule",text:f.rule+" · "+f.category}),
+    f.detail?h("p",{text:f.detail}):null, f.remediation?h("p",{"class":"fix",text:"→ "+f.remediation}):null, chips);
+}
+
+// state map
+(function(){
+  var states = R.states.map(function(s){ return s.name; });
+  if (states.length<1) return;
+  var agg = {};
+  R.edges.forEach(function(e){
+    var a=NODES[e.from], b=NODES[e.to]; if(!a||!b||a.state===b.state) return;
+    var k=a.state+"\u0000"+b.state; (agg[k]=agg[k]||{from:a.state,to:b.state,kinds:{},edges:[]}).edges.push(e);
+    agg[k].kinds[e.kind]=(agg[k].kinds[e.kind]||0)+1;
+  });
+  var W=Math.max(520, states.length*230), H=states.length>3?360:200, cx=W/2, cy=H/2, pos={};
+  states.forEach(function(n,i){
+    if (states.length<=3){ pos[n]=[ (i+0.5)*W/states.length, cy ]; }
+    else { var ang=2*Math.PI*i/states.length-Math.PI/2; pos[n]=[cx+Math.cos(ang)*(W/2-120), cy+Math.sin(ang)*(H/2-50)]; }
+  });
+  var svg = s("svg",{width:W,height:H});
+  var defs=s("defs"); var m=s("marker",{id:"arr",viewBox:"0 0 10 10",refX:"10",refY:"5",markerWidth:"7",markerHeight:"7",orient:"auto-start-reverse"});
+  m.appendChild(s("path",{d:"M0,0L10,5L0,10z",fill:"#8a96a6"})); defs.appendChild(m); svg.appendChild(defs);
+  Object.keys(agg).forEach(function(k){
+    var g=agg[k], p1=pos[g.to], p2=pos[g.from], dx=p2[0]-p1[0], dy=p2[1]-p1[1], len=Math.sqrt(dx*dx+dy*dy)||1;
+    var x1=p1[0]+dx/len*100, y1=p1[1]+dy/len*30, x2=p2[0]-dx/len*100, y2=p2[1]-dy/len*30;
+    var bend = 18; var mx=(x1+x2)/2 - dy/len*bend, my=(y1+y2)/2 + dx/len*bend;
+    svg.appendChild(s("path",{d:"M"+x1+","+y1+" Q"+mx+","+my+" "+x2+","+y2,stroke:"#8a96a6","stroke-width":Math.min(6,1+Math.log2(g.edges.length+1)),fill:"none","marker-end":"url(#arr)"}));
+    var label = Object.keys(g.kinds).map(function(k){ return g.kinds[k]+" "+k; }).join(", ");
+    svg.appendChild(s("text",{x:mx,y:my-4,"text-anchor":"middle",fill:"#d8dee6","font-size":"11",text:label}));
+  });
+  R.states.forEach(function(st){
+    var p=pos[st.name], g=s("g");
+    var clouds=Object.keys(st.clouds||{}).sort(function(a,b){return st.clouds[b]-st.clouds[a];});
+    g.appendChild(s("rect",{x:p[0]-95,y:p[1]-28,width:190,height:56,rx:8,fill:"#1d2631",stroke:st.primary?"#5fb3f9":"#2a3542","stroke-width":st.primary?2:1}));
+    g.appendChild(s("rect",{x:p[0]-95,y:p[1]-28,width:6,height:56,fill:CLOUD[clouds[0]||"other"]}));
+    g.appendChild(s("text",{x:p[0]-82,y:p[1]-8,fill:"#d8dee6","font-size":"12","font-weight":"600",text:short(st.name,24)+(st.primary?"  (plan)":"")}));
+    g.appendChild(s("text",{x:p[0]-82,y:p[1]+12,fill:"#8a96a6","font-size":"11",text:st.resources+" resources · "+clouds.join("/")}));
+    svg.appendChild(g);
+  });
+  $("state-map").appendChild(svg);
+  var keys=Object.keys(agg); if(!keys.length) return;
+  var t=h("table",null,h("tr",null,h("th",{text:"From (depends)"}),h("th",{text:"To (provides)"}),h("th",{text:"Kind"}),h("th",{text:"Evidence"}),h("th",{text:"Confidence"})));
+  keys.forEach(function(k){ agg[k].edges.slice(0,200).forEach(function(e){
+    t.appendChild(h("tr",null,
+      h("td",null,h("span",{"class":"chip",text:e.from,onclick:function(){openNode(e.from);}})),
+      h("td",null,h("span",{"class":"chip",text:e.to,onclick:function(){openNode(e.to);}})),
+      h("td",{text:e.kind}),h("td",{"class":"small",text:e.evidence||""}),h("td",{text:e.confidence||"high"})));
+  }); });
+  $("cross-table").appendChild(h("h2",{text:"Cross-state links"})); $("cross-table").appendChild(t);
+})();
+
+// findings tab
+(function(){
+  var sevSel=$("f-sev"), catSel=$("f-cat");
+  SEV.forEach(function(sv){ sevSel.appendChild(h("option",{value:sv,text:sv})); });
+  var cats={}; R.findings.forEach(function(f){ cats[f.category]=1; });
+  catSel.appendChild(h("option",{value:"",text:"all"}));
+  Object.keys(cats).sort().forEach(function(c){ catSel.appendChild(h("option",{value:c,text:c})); });
+  function render(){
+    var min=SEV.indexOf(sevSel.value), cat=catSel.value, box=clear($("findings")), n=0;
+    R.findings.forEach(function(f){ if(SEV.indexOf(f.severity)<min||(cat&&f.category!==cat)) return; n++; box.appendChild(findingEl(f)); });
+    $("f-count").textContent = n+" of "+R.findings.length+" findings";
+    if(!n) box.appendChild(h("div",{"class":"empty",text:"No findings match."}));
+  }
+  sevSel.addEventListener("change",render); catSel.addEventListener("change",render); render();
+})();
+
+// legend
+function legend(el){
+  clear(el);
+  [["azure","Azure"],["gcp","GCP"],["aws","AWS"],["kubernetes","Kubernetes"],["other","Other"]].forEach(function(c){
+    el.appendChild(h("span",null,h("i",{style:"background:"+CLOUD[c[0]]}),c[1])); });
+  [["create","create"],["update","update"],["delete","delete"],["replace","replace"]].forEach(function(c){
+    el.appendChild(h("span",null,h("i",{style:"border:2px solid "+ACT[c[0]]+";background:none"}),c[1])); });
+  el.appendChild(h("span",null,h("i",{style:"border:2px dotted var(--drift);background:none"}),"drifted"));
+  Object.keys(EDGE).forEach(function(k){ el.appendChild(h("span",null,h("i",{style:"background:"+EDGE[k][0]+";height:3px"}),k)); });
+}
+legend($("legend-cone")); legend($("legend-explore"));
+
+// layered graph: cols maps id -> integer column
+function layered(container, cols, opts){
+  clear(container);
+  var ids=Object.keys(cols);
+  if(!ids.length){ container.appendChild(h("div",{"class":"empty",text:opts.empty||"Nothing to show."})); return; }
+  var byCol={}, min=Infinity, max=-Infinity;
+  ids.forEach(function(id){ var c=cols[id]; (byCol[c]=byCol[c]||[]).push(id); min=Math.min(min,c); max=Math.max(max,c); });
+  var perCol = Math.max(8, Math.floor((R.max_nodes||400)/Math.max(1,max-min+1)));
+  var W=250,H=38,GX=90,GY=10,P=20, pos={}, hidden=0, maxRows=0, overflow=[];
+  for (var c=min;c<=max;c++){
+    var list=(byCol[c]||[]).sort(function(a,b){
+      var na=NODES[a], nb=NODES[b], ra=(na.id===opts.focus?0:1), rb=(nb.id===opts.focus?0:1);
+      if(ra!==rb) return ra-rb;
+      var aa=na.action&&na.action!=="no-op"&&na.action!=="read"?0:1, ab=nb.action&&nb.action!=="no-op"&&nb.action!=="read"?0:1;
+      if(aa!==ab) return aa-ab;
+      return na.state===nb.state ? (na.address<nb.address?-1:1) : (na.state<nb.state?-1:1);
+    });
+    var shown=list.slice(0,perCol); hidden+=list.length-shown.length;
+    shown.forEach(function(id,i){ pos[id]=[P+(c-min)*(W+GX), P+i*(H+GY)]; });
+    if(list.length>shown.length) overflow.push([c,shown.length,list.length-shown.length]);
+    maxRows=Math.max(maxRows, shown.length+(list.length>shown.length?1:0));
+  }
+  var z=opts.zoom||1, width=P*2+(max-min+1)*(W+GX)-GX, height=P*2+maxRows*(H+GY);
+  var svg=s("svg",{width:width*z,height:height*z,viewBox:"0 0 "+width+" "+height});
+  var defs=s("defs");
+  Object.keys(EDGE).forEach(function(k){ var m=s("marker",{id:"m-"+k+opts.key,viewBox:"0 0 10 10",refX:"10",refY:"5",markerWidth:"6",markerHeight:"6",orient:"auto"});
+    m.appendChild(s("path",{d:"M0,0L10,5L0,10z",fill:EDGE[k][0]})); defs.appendChild(m); });
+  svg.appendChild(defs);
+  R.edges.forEach(function(e){
+    var a=pos[e.to], b=pos[e.from]; if(!a||!b) return;
+    var x1,x2,y1=a[1]+H/2,y2=b[1]+H/2;
+    if (a[0]<b[0]) { x1=a[0]+W; x2=b[0]; } else if (a[0]>b[0]) { x1=a[0]; x2=b[0]+W; } else { x1=a[0]+W; x2=b[0]+W; }
+    var dx=Math.max(40,Math.abs(x2-x1)/2), st=EDGE[e.kind]||EDGE.dependency;
+    var d = a[0]===b[0] ? "M"+x1+","+y1+" C"+(x1+50)+","+y1+" "+(x2+50)+","+y2+" "+x2+","+y2
+      : "M"+x1+","+y1+" C"+(x1+(x2>x1?dx:-dx))+","+y1+" "+(x2-(x2>x1?dx:-dx))+","+y2+" "+x2+","+y2;
+    var p=s("path",{d:d,fill:"none",stroke:st[0],"stroke-width":e.kind==="dependency"?1.2:2,"stroke-dasharray":st[1],"marker-end":"url(#m-"+e.kind+opts.key+")",opacity:e.confidence==="low"?0.45:0.85});
+    p.appendChild(s("title",{text:e.kind+(e.evidence?": "+e.evidence:"")+(e.confidence?" ("+e.confidence+")":"")}));
+    svg.appendChild(p);
+  });
+  Object.keys(pos).forEach(function(id){
+    var n=NODES[id], p=pos[id], g=s("g",{"class":"node"+(id===selected?" sel":""),transform:"translate("+p[0]+","+p[1]+")"});
+    var stroke=ACT[n.action]||"#2a3542", dash=n.action==="replace"?"6 3":"";
+    g.appendChild(s("rect",{"class":"box",width:W,height:H,fill:id===opts.focus?"#24344a":"#1d2631",stroke:n.drift&&!ACT[n.action]?"var(--drift)":stroke,"stroke-width":ACT[n.action]||n.drift?2:1,"stroke-dasharray":n.drift&&!ACT[n.action]?"2 2":dash}));
+    g.appendChild(s("rect",{width:5,height:H,fill:CLOUD[n.cloud]||CLOUD.other}));
+    g.appendChild(s("text",{x:11,y:16,text:short(n.address,34)}));
+    var sub=n.state+(n.action&&n.action!=="no-op"?" · "+n.action:"")+(n.drift?" · drift:"+n.drift:"")+(n.impact?" · impacts "+n.impact:"");
+    g.appendChild(s("text",{"class":"sub",x:11,y:30,text:short(sub,44)}));
+    g.appendChild(s("title",{text:n.id}));
+    g.addEventListener("click",function(){ select(id); if(opts.onClick) opts.onClick(id); });
+    svg.appendChild(g);
+  });
+  overflow.forEach(function(o){
+    var x=P+(o[0]-min)*(W+GX), y=P+o[1]*(H+GY);
+    svg.appendChild(s("text",{x:x+8,y:y+20,fill:"#8a96a6","font-size":"12",text:"+"+o[2]+" more in this column (use Explore)"}));
+  });
+  container.appendChild(svg);
+  return hidden;
+}
+
+// change cone
+(function(){
+  var sel=$("c-state"); sel.appendChild(h("option",{value:"",text:"all states"}));
+  R.states.forEach(function(st){ sel.appendChild(h("option",{value:st.name,text:st.name})); });
+  sel.addEventListener("change",renderCone); $("c-up").addEventListener("change",renderCone); $("c-depth").addEventListener("change",renderCone);
+})();
+function renderCone(){
+  var stf=$("c-state").value, up=$("c-up").checked, depth=parseInt($("c-depth").value,10), cols={};
+  R.nodes.forEach(function(n){
+    if(!n.role) return;
+    if(stf && n.state!==stf) return;
+    if(n.role==="changed") cols[n.id]=0;
+    else if(n.role==="impacted" && n.distance<=depth) cols[n.id]=n.distance;
+    else if(n.role==="dependency" && up) cols[n.id]=-1;
+  });
+  var hidden=layered($("g-cone"), cols, {key:"c", zoom:zoom.cone, empty: R.plan?"The plan changes nothing and no drift was detected.":"No plan was provided. Run with --plan to see the change cone, or use Explore.", onClick:null});
+  var seeds=R.seeds.length, imp=R.nodes.filter(function(n){return n.role==="impacted";}).length;
+  $("c-info").textContent = seeds+" changed/drifted · "+imp+" transitively impacted"+(hidden?" · "+hidden+" hidden":"");
+}
+
+// explore
+var qEl=$("q");
+qEl.addEventListener("input", function(){
+  var q=qEl.value.trim().toLowerCase(), box=clear($("results"));
+  if(q.length<2) return;
+  var hits=R.nodes.filter(function(n){ return n.id.toLowerCase().indexOf(q)>=0 || n.type.toLowerCase().indexOf(q)>=0; }).slice(0,200);
+  hits.forEach(function(n){ box.appendChild(h("div",{"class":"mono",text:n.id+(n.action&&n.action!=="no-op"?"  ["+n.action+"]":""),onclick:function(){ focus=n.id; select(n.id); renderExplore(); }})); });
+  if(!hits.length) box.appendChild(h("div",{"class":"muted",text:"No matches."}));
+});
+$("e-depth").addEventListener("change", renderExplore);
+function renderExplore(){
+  if(!focus){ clear($("g-explore")).appendChild(h("div",{"class":"empty",text:"Search for a resource, or click any resource chip, to explore its neighborhood."})); $("e-info").textContent=""; return; }
+  var depth=parseInt($("e-depth").value,10), cols={}; cols[focus]=0;
+  function walk(dir){
+    var frontier=[focus], seen={}; seen[focus]=1;
+    for(var d=1; d<=depth; d++){
+      var next=[];
+      frontier.forEach(function(id){ (dir>0?IN[id]:OUT[id]).forEach(function(e){ var o=dir>0?e.from:e.to; if(seen[o]) return; seen[o]=1; if(!(o in cols)) cols[o]=dir*d; next.push(o); }); });
+      frontier=next;
+    }
+  }
+  walk(-1); walk(1);
+  var hidden=layered($("g-explore"), cols, {key:"e", zoom:zoom.explore, focus:focus, onClick:function(id){ focus=id; renderExplore(); }});
+  $("e-info").textContent = "Left: what "+NODES[focus].address+" depends on · Right: what depends on it"+(hidden?" · "+hidden+" hidden":"");
+}
+
+// detail panel
+function select(id){
+  selected=id; var n=NODES[id], box=clear($("detail"));
+  if(!n) return;
+  box.appendChild(h("div",{"class":"mono",style:"font-weight:600",text:n.address}));
+  var kv=h("div",{"class":"kv"});
+  [["state",n.state],["type",n.type],["mode",n.mode],["provider",n.provider||""],["cloud",n.cloud],["instances",String(n.instances)],
+   ["action",n.action||"none"],["drift",n.drift||"none"],["impact",n.impact?n.impact+" downstream ("+(n.cross_impact||0)+" in other states)":"—"]].forEach(function(p){
+    kv.appendChild(h("div",{text:p[0]})); kv.appendChild(h("div",{"class":"mono",text:p[1]})); });
+  if(n.tainted){ kv.appendChild(h("div",{text:"status"})); kv.appendChild(h("div",{text:"tainted"})); }
+  if(n.planned){ kv.appendChild(h("div",{text:"note"})); kv.appendChild(h("div",{text:"new in plan (not in state)"})); }
+  box.appendChild(kv);
+  box.appendChild(h("button",{"class":"b",text:"Explore neighborhood",onclick:function(){ focus=id; showTab("explore"); }}));
+  function edges(title,list,key){
+    box.appendChild(h("h2",{text:title+" ("+list.length+")"}));
+    list.slice(0,100).forEach(function(e){
+      var other=e[key];
+      box.appendChild(h("div",{style:"margin:3px 0"},h("span",{"class":"chip",text:short(other,48),title:other,onclick:function(){ openNode(other); }}),
+        h("span",{"class":"muted small",text:" "+e.kind+(e.evidence?" · "+e.evidence:"")})));
+    });
+    if(list.length>100) box.appendChild(h("div",{"class":"muted small",text:"+"+(list.length-100)+" more"}));
+  }
+  edges("Depends on", OUT[id]||[], "to");
+  edges("Used by", IN[id]||[], "from");
+  var related=R.findings.filter(function(f){ return (f.nodes||[]).indexOf(id)>=0; });
+  if(related.length){ box.appendChild(h("h2",{text:"Findings"})); related.forEach(function(f){ box.appendChild(findingEl(f)); }); }
+  document.querySelectorAll(".node").forEach(function(g){ var t=g.querySelector("title"); g.classList.toggle("sel", !!t && t.textContent===id); });
+}
+function openNode(id){ if(!NODES[id]) return; focus=id; select(id); showTab("explore"); }
+
+// inventory: state -> module -> type, lazily expanded
+(function(){
+  var box=$("inventory");
+  R.states.forEach(function(st){
+    var nodes=R.nodes.filter(function(n){ return n.state===st.name; });
+    var d=h("details",null,h("summary",null,h("b",{text:st.name}),h("span",{"class":"muted",text:"  "+st.format+" · TF "+(st.terraform_version||"?")+(st.serial!=null?" · serial "+st.serial:"")+" · "+st.resources+" resources, "+st.data_sources+" data sources"+(st.primary?" · plan target":"")})));
+    var filled=false;
+    d.addEventListener("toggle",function(){
+      if(!d.open||filled) return; filled=true;
+      var mods={};
+      nodes.forEach(function(n){ var m=n.module||"(root)"; (mods[m]=mods[m]||{})[n.type]=((mods[m]||{})[n.type]||[]).concat([n]); });
+      Object.keys(mods).sort().forEach(function(m){
+        var types=mods[m], cnt=0; Object.keys(types).forEach(function(t){ cnt+=types[t].length; });
+        var md=h("details",{"class":"inv"},h("summary",null,h("span",{"class":"mono",text:m}),h("span",{"class":"muted",text:"  "+cnt})));
+        Object.keys(types).sort().forEach(function(t){
+          var td=h("details",{"class":"inv"},h("summary",null,h("span",{"class":"mono",text:t}),h("span",{"class":"muted",text:"  "+types[t].length})));
+          var tfilled=false;
+          td.addEventListener("toggle",function(){ if(!td.open||tfilled) return; tfilled=true;
+            types[t].forEach(function(n){ td.appendChild(h("div",{"class":"inv"},h("span",{"class":"chip",text:n.address+(n.action&&n.action!=="no-op"?"  ["+n.action+"]":""),onclick:function(){ openNode(n.id); }}))); }); });
+          md.appendChild(td);
+        });
+        d.appendChild(md);
+      });
+    });
+    box.appendChild(d);
+  });
+})();
+})();
+</script>
+</body>
+</html>

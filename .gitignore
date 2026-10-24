@@ -1,0 +1,21 @@
+# State snapshots and plans can contain secrets; only synthetic fixtures are tracked.
+*.tfstate
+*.tfstate.*
+*.tfplan
+tfplan
+plan.json
+!testdata/**/*.tfstate
+!testdata/**/*.json
+
+# Reports
+*.html
+!internal/report/template.html
+report*.json
+cloudweave.json
+
+# Build output
+/cloudweave
+/cloudweave.exe
+/dist/
+*.test
+*.out

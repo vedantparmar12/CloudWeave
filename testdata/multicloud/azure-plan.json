@@ -1,0 +1,899 @@
+{
+  "format_version": "1.2",
+  "terraform_version": "1.9.5",
+  "timestamp": "2026-10-20T09:15:00Z",
+  "complete": true,
+  "applyable": true,
+  "errored": false,
+  "variables": {
+    "location": {
+      "value": "northeurope"
+    }
+  },
+  "planned_values": {
+    "root_module": {}
+  },
+  "resource_drift": [
+    {
+      "address": "azurerm_kubernetes_cluster.aks",
+      "mode": "managed",
+      "type": "azurerm_kubernetes_cluster",
+      "name": "aks",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ContainerService/managedClusters/aks-platform",
+          "name": "aks-platform",
+          "location": "westeurope",
+          "resource_group_name": "rg-platform",
+          "oidc_issuer_enabled": true,
+          "oidc_issuer_url": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+          "workload_identity_enabled": true,
+          "kubernetes_version": "1.30.4",
+          "default_node_pool": [
+            {
+              "name": "system",
+              "node_count": 3,
+              "vm_size": "Standard_D4s_v5"
+            }
+          ],
+          "identity": [
+            {
+              "type": "UserAssigned",
+              "identity_ids": [
+                "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload"
+              ],
+              "principal_id": "",
+              "tenant_id": ""
+            }
+          ],
+          "kube_config_raw": "apiVersion: v1\nclusters: [] # SECRET-KUBECONFIG"
+        },
+        "after": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ContainerService/managedClusters/aks-platform",
+          "name": "aks-platform",
+          "location": "westeurope",
+          "resource_group_name": "rg-platform",
+          "oidc_issuer_enabled": true,
+          "oidc_issuer_url": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+          "workload_identity_enabled": true,
+          "kubernetes_version": "1.30.4",
+          "default_node_pool": [
+            {
+              "name": "system",
+              "node_count": 5,
+              "vm_size": "Standard_D4s_v5"
+            }
+          ],
+          "identity": [
+            {
+              "type": "UserAssigned",
+              "identity_ids": [
+                "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload"
+              ],
+              "principal_id": "",
+              "tenant_id": ""
+            }
+          ],
+          "kube_config_raw": "apiVersion: v1\nclusters: [] # SECRET-KUBECONFIG"
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "azurerm_storage_account.logs",
+      "mode": "managed",
+      "type": "azurerm_storage_account",
+      "name": "logs",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.Storage/storageAccounts/stcwlogs",
+          "name": "stcwlogs",
+          "resource_group_name": "rg-platform",
+          "location": "westeurope",
+          "account_tier": "Standard",
+          "primary_access_key": "SECRET-STORAGE-KEY"
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "resource_changes": [
+    {
+      "address": "azurerm_user_assigned_identity.workload",
+      "mode": "managed",
+      "type": "azurerm_user_assigned_identity",
+      "name": "workload",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload",
+          "name": "id-workload",
+          "location": "westeurope",
+          "resource_group_name": "rg-platform",
+          "client_id": "8d7c6b5a-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+          "principal_id": "c0ffee00-1234-4abc-9def-0123456789ab",
+          "tenant_id": "3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13",
+          "tags": {}
+        },
+        "after": {
+          "id": null,
+          "name": "id-workload",
+          "location": "northeurope",
+          "resource_group_name": "rg-platform",
+          "client_id": null,
+          "principal_id": null,
+          "tenant_id": "3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13",
+          "tags": {}
+        },
+        "after_unknown": {
+          "id": true,
+          "client_id": true,
+          "principal_id": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "replace_paths": [
+          [
+            "location"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "azurerm_kubernetes_cluster.aks",
+      "mode": "managed",
+      "type": "azurerm_kubernetes_cluster",
+      "name": "aks",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "update"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ContainerService/managedClusters/aks-platform",
+          "name": "aks-platform",
+          "location": "westeurope",
+          "resource_group_name": "rg-platform",
+          "oidc_issuer_enabled": true,
+          "oidc_issuer_url": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+          "workload_identity_enabled": true,
+          "kubernetes_version": "1.30.4",
+          "default_node_pool": [
+            {
+              "name": "system",
+              "node_count": 5,
+              "vm_size": "Standard_D4s_v5"
+            }
+          ],
+          "identity": [
+            {
+              "type": "UserAssigned",
+              "identity_ids": [
+                "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload"
+              ],
+              "principal_id": "",
+              "tenant_id": ""
+            }
+          ],
+          "kube_config_raw": "apiVersion: v1\nclusters: [] # SECRET-KUBECONFIG"
+        },
+        "after": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ContainerService/managedClusters/aks-platform",
+          "name": "aks-platform",
+          "location": "westeurope",
+          "resource_group_name": "rg-platform",
+          "oidc_issuer_enabled": true,
+          "oidc_issuer_url": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+          "workload_identity_enabled": true,
+          "kubernetes_version": "1.30.4",
+          "default_node_pool": [
+            {
+              "name": "system",
+              "node_count": 3,
+              "vm_size": "Standard_D4s_v5"
+            }
+          ],
+          "identity": [
+            {
+              "type": "UserAssigned",
+              "identity_ids": [
+                "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload"
+              ],
+              "principal_id": "",
+              "tenant_id": ""
+            }
+          ],
+          "kube_config_raw": "apiVersion: v1\nclusters: [] # SECRET-KUBECONFIG"
+        },
+        "after_unknown": {
+          "identity": [
+            {
+              "identity_ids": [
+                true
+              ]
+            }
+          ]
+        },
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "azurerm_federated_identity_credential.aks_workload",
+      "mode": "managed",
+      "type": "azurerm_federated_identity_credential",
+      "name": "aks_workload",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "delete",
+          "create"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload/federatedIdentityCredentials/aks-exporter",
+          "name": "aks-exporter",
+          "parent_id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload",
+          "resource_group_name": "rg-platform",
+          "issuer": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+          "subject": "system:serviceaccount:apps:exporter",
+          "audience": [
+            "api://AzureADTokenExchange"
+          ]
+        },
+        "after": null,
+        "after_unknown": {
+          "id": true,
+          "parent_id": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {},
+        "replace_paths": [
+          [
+            "parent_id"
+          ]
+        ]
+      },
+      "action_reason": "replace_because_cannot_update"
+    },
+    {
+      "address": "azurerm_storage_account.logs",
+      "mode": "managed",
+      "type": "azurerm_storage_account",
+      "name": "logs",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "name": "stcwlogs",
+          "account_tier": "Standard"
+        },
+        "after_unknown": {
+          "id": true,
+          "primary_access_key": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "azurerm_role_assignment.workload_logs_reader",
+      "mode": "managed",
+      "type": "azurerm_role_assignment",
+      "name": "workload_logs_reader",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "create"
+        ],
+        "before": null,
+        "after": {
+          "scope": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.Storage/storageAccounts/stcwlogs",
+          "role_definition_name": "Storage Blob Data Reader",
+          "principal_id": null
+        },
+        "after_unknown": {
+          "id": true,
+          "principal_id": true,
+          "scope": true
+        },
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "azurerm_key_vault.legacy",
+      "mode": "managed",
+      "type": "azurerm_key_vault",
+      "name": "legacy",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "delete"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.KeyVault/vaults/kv-legacy-cw",
+          "name": "kv-legacy-cw",
+          "resource_group_name": "rg-platform",
+          "tenant_id": "3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13",
+          "sku_name": "standard"
+        },
+        "after": null,
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      },
+      "action_reason": "delete_because_no_resource_config"
+    },
+    {
+      "address": "azurerm_resource_group.platform",
+      "mode": "managed",
+      "type": "azurerm_resource_group",
+      "name": "platform",
+      "provider_name": "registry.terraform.io/hashicorp/azurerm",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform",
+          "name": "rg-platform",
+          "location": "westeurope",
+          "tags": {
+            "owner": "platform"
+          }
+        },
+        "after": {
+          "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform",
+          "name": "rg-platform",
+          "location": "westeurope",
+          "tags": {
+            "owner": "platform"
+          }
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    },
+    {
+      "address": "azuread_application.gcp_bridge",
+      "mode": "managed",
+      "type": "azuread_application",
+      "name": "gcp_bridge",
+      "provider_name": "registry.terraform.io/hashicorp/azuread",
+      "change": {
+        "actions": [
+          "no-op"
+        ],
+        "before": {
+          "id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+          "object_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+          "client_id": "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9",
+          "display_name": "gcp-bridge",
+          "identifier_uris": [
+            "api://cloudweave-gcp-bridge"
+          ]
+        },
+        "after": {
+          "id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+          "object_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+          "client_id": "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9",
+          "display_name": "gcp-bridge",
+          "identifier_uris": [
+            "api://cloudweave-gcp-bridge"
+          ]
+        },
+        "after_unknown": {},
+        "before_sensitive": {},
+        "after_sensitive": {}
+      }
+    }
+  ],
+  "output_changes": {
+    "workload_principal_id": {
+      "actions": [
+        "update"
+      ],
+      "before": "c0ffee00-1234-4abc-9def-0123456789ab",
+      "after": null,
+      "after_unknown": true,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "workload_client_id": {
+      "actions": [
+        "update"
+      ],
+      "before": "8d7c6b5a-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+      "after": null,
+      "after_unknown": true,
+      "before_sensitive": false,
+      "after_sensitive": false
+    },
+    "aks_oidc_issuer": {
+      "actions": [
+        "no-op"
+      ],
+      "before": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+      "after": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+      "after_unknown": false,
+      "before_sensitive": false,
+      "after_sensitive": false
+    }
+  },
+  "prior_state": {
+    "format_version": "1.0",
+    "terraform_version": "1.9.5",
+    "values": {
+      "outputs": {
+        "workload_principal_id": {
+          "sensitive": false,
+          "value": "c0ffee00-1234-4abc-9def-0123456789ab",
+          "type": "string"
+        },
+        "workload_client_id": {
+          "sensitive": false,
+          "value": "8d7c6b5a-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+          "type": "string"
+        },
+        "aks_oidc_issuer": {
+          "sensitive": false,
+          "value": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+          "type": "string"
+        }
+      },
+      "root_module": {
+        "resources": [
+          {
+            "address": "data.terraform_remote_state.gcp",
+            "mode": "data",
+            "type": "terraform_remote_state",
+            "name": "gcp",
+            "provider_name": "terraform.io/builtin/terraform",
+            "schema_version": 0,
+            "values": {
+              "backend": "gcs",
+              "config": {
+                "value": {
+                  "bucket": "cw-tfstate",
+                  "prefix": "gcp-identity"
+                },
+                "type": [
+                  "object",
+                  {
+                    "bucket": "string",
+                    "prefix": "string"
+                  }
+                ]
+              },
+              "defaults": null,
+              "workspace": "default",
+              "outputs": {
+                "value": {
+                  "wif_provider": "projects/123456789012/locations/global/workloadIdentityPools/azure-pool/providers/aks-oidc",
+                  "bridge_sa_email": "azure-bridge@cw-shared-prod.iam.gserviceaccount.com",
+                  "bridge_sa_unique_id": "108234567890123456789",
+                  "artifacts_bucket": "cw-artifacts-staging"
+                },
+                "type": [
+                  "object",
+                  {
+                    "wif_provider": "string",
+                    "bridge_sa_email": "string",
+                    "bridge_sa_unique_id": "string",
+                    "artifacts_bucket": "string"
+                  }
+                ]
+              }
+            },
+            "sensitive_values": {}
+          },
+          {
+            "address": "azurerm_resource_group.platform",
+            "mode": "managed",
+            "type": "azurerm_resource_group",
+            "name": "platform",
+            "provider_name": "registry.terraform.io/hashicorp/azurerm",
+            "schema_version": 0,
+            "values": {
+              "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform",
+              "name": "rg-platform",
+              "location": "westeurope",
+              "tags": {
+                "owner": "platform"
+              }
+            },
+            "sensitive_values": {}
+          },
+          {
+            "address": "azurerm_user_assigned_identity.workload",
+            "mode": "managed",
+            "type": "azurerm_user_assigned_identity",
+            "name": "workload",
+            "provider_name": "registry.terraform.io/hashicorp/azurerm",
+            "schema_version": 0,
+            "values": {
+              "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload",
+              "name": "id-workload",
+              "location": "westeurope",
+              "resource_group_name": "rg-platform",
+              "client_id": "8d7c6b5a-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+              "principal_id": "c0ffee00-1234-4abc-9def-0123456789ab",
+              "tenant_id": "3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13",
+              "tags": {}
+            },
+            "sensitive_values": {},
+            "depends_on": [
+              "azurerm_resource_group.platform"
+            ]
+          },
+          {
+            "address": "azurerm_kubernetes_cluster.aks",
+            "mode": "managed",
+            "type": "azurerm_kubernetes_cluster",
+            "name": "aks",
+            "provider_name": "registry.terraform.io/hashicorp/azurerm",
+            "schema_version": 0,
+            "values": {
+              "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ContainerService/managedClusters/aks-platform",
+              "name": "aks-platform",
+              "location": "westeurope",
+              "resource_group_name": "rg-platform",
+              "oidc_issuer_enabled": true,
+              "oidc_issuer_url": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+              "workload_identity_enabled": true,
+              "kubernetes_version": "1.30.4",
+              "default_node_pool": [
+                {
+                  "name": "system",
+                  "node_count": 5,
+                  "vm_size": "Standard_D4s_v5"
+                }
+              ],
+              "identity": [
+                {
+                  "type": "UserAssigned",
+                  "identity_ids": [
+                    "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload"
+                  ],
+                  "principal_id": "",
+                  "tenant_id": ""
+                }
+              ],
+              "kube_config_raw": "apiVersion: v1\nclusters: [] # SECRET-KUBECONFIG"
+            },
+            "sensitive_values": {
+              "kube_config_raw": true
+            },
+            "depends_on": [
+              "azurerm_resource_group.platform",
+              "azurerm_user_assigned_identity.workload"
+            ]
+          },
+          {
+            "address": "azurerm_federated_identity_credential.aks_workload",
+            "mode": "managed",
+            "type": "azurerm_federated_identity_credential",
+            "name": "aks_workload",
+            "provider_name": "registry.terraform.io/hashicorp/azurerm",
+            "schema_version": 0,
+            "values": {
+              "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload/federatedIdentityCredentials/aks-exporter",
+              "name": "aks-exporter",
+              "parent_id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.ManagedIdentity/userAssignedIdentities/id-workload",
+              "resource_group_name": "rg-platform",
+              "issuer": "https://westeurope.oic.prod-aks.azure.com/3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13/9b8c7d6e-5f4a-4b3c-2d1e-0f9a8b7c6d5e/",
+              "subject": "system:serviceaccount:apps:exporter",
+              "audience": [
+                "api://AzureADTokenExchange"
+              ]
+            },
+            "sensitive_values": {},
+            "depends_on": [
+              "azurerm_kubernetes_cluster.aks",
+              "azurerm_user_assigned_identity.workload"
+            ]
+          },
+          {
+            "address": "azurerm_key_vault.legacy",
+            "mode": "managed",
+            "type": "azurerm_key_vault",
+            "name": "legacy",
+            "provider_name": "registry.terraform.io/hashicorp/azurerm",
+            "schema_version": 0,
+            "values": {
+              "id": "/subscriptions/a1b2c3d4-1111-2222-3333-444455556666/resourceGroups/rg-platform/providers/Microsoft.KeyVault/vaults/kv-legacy-cw",
+              "name": "kv-legacy-cw",
+              "resource_group_name": "rg-platform",
+              "tenant_id": "3f2c8a1e-5b7d-4c9a-8e21-6d4b9f0a7c13",
+              "sku_name": "standard"
+            },
+            "sensitive_values": {},
+            "depends_on": [
+              "azurerm_resource_group.platform"
+            ]
+          },
+          {
+            "address": "azuread_application.gcp_bridge",
+            "mode": "managed",
+            "type": "azuread_application",
+            "name": "gcp_bridge",
+            "provider_name": "registry.terraform.io/hashicorp/azuread",
+            "schema_version": 0,
+            "values": {
+              "id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+              "object_id": "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+              "client_id": "5e6f7a8b-9c0d-4e1f-a2b3-c4d5e6f7a8b9",
+              "display_name": "gcp-bridge",
+              "identifier_uris": [
+                "api://cloudweave-gcp-bridge"
+              ]
+            },
+            "sensitive_values": {}
+          },
+          {
+            "address": "azuread_application_federated_identity_credential.from_gcp",
+            "mode": "managed",
+            "type": "azuread_application_federated_identity_credential",
+            "name": "from_gcp",
+            "provider_name": "registry.terraform.io/hashicorp/azuread",
+            "schema_version": 0,
+            "values": {
+              "id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d/federatedIdentityCredential/11111111-2222-4333-8444-555555555555",
+              "application_id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+              "display_name": "from-gcp-bridge-sa",
+              "issuer": "https://accounts.google.com",
+              "subject": "108234567890123456789",
+              "audiences": [
+                "api://AzureADTokenExchange"
+              ]
+            },
+            "sensitive_values": {},
+            "depends_on": [
+              "azuread_application.gcp_bridge",
+              "data.terraform_remote_state.gcp"
+            ]
+          },
+          {
+            "address": "azuread_application_federated_identity_credential.reporting",
+            "mode": "managed",
+            "type": "azuread_application_federated_identity_credential",
+            "name": "reporting",
+            "provider_name": "registry.terraform.io/hashicorp/azuread",
+            "schema_version": 0,
+            "values": {
+              "id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d/federatedIdentityCredential/66666666-7777-4888-9999-000000000000",
+              "application_id": "/applications/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d",
+              "display_name": "reporting-job",
+              "issuer": "https://accounts.google.com/",
+              "subject": "azure-bridge@cw-shared-prod.iam.gserviceaccount.com",
+              "audiences": [
+                "api://AzureADTokenExchange"
+              ]
+            },
+            "sensitive_values": {},
+            "depends_on": [
+              "azuread_application.gcp_bridge",
+              "data.terraform_remote_state.gcp"
+            ]
+          }
+        ]
+      }
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "azurerm": {
+        "name": "azurerm",
+        "full_name": "registry.terraform.io/hashicorp/azurerm"
+      },
+      "azuread": {
+        "name": "azuread",
+        "full_name": "registry.terraform.io/hashicorp/azuread"
+      }
+    },
+    "root_module": {
+      "resources": [
+        {
+          "address": "azurerm_resource_group.platform",
+          "mode": "managed",
+          "type": "azurerm_resource_group",
+          "name": "platform",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "name": {
+              "constant_value": "rg-platform"
+            }
+          }
+        },
+        {
+          "address": "azurerm_user_assigned_identity.workload",
+          "mode": "managed",
+          "type": "azurerm_user_assigned_identity",
+          "name": "workload",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.platform.name",
+                "azurerm_resource_group.platform"
+              ]
+            },
+            "location": {
+              "references": [
+                "var.location"
+              ]
+            }
+          }
+        },
+        {
+          "address": "azurerm_kubernetes_cluster.aks",
+          "mode": "managed",
+          "type": "azurerm_kubernetes_cluster",
+          "name": "aks",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.platform.name",
+                "azurerm_resource_group.platform"
+              ]
+            },
+            "identity": [
+              {
+                "identity_ids": {
+                  "references": [
+                    "azurerm_user_assigned_identity.workload.id",
+                    "azurerm_user_assigned_identity.workload"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        {
+          "address": "azurerm_federated_identity_credential.aks_workload",
+          "mode": "managed",
+          "type": "azurerm_federated_identity_credential",
+          "name": "aks_workload",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "parent_id": {
+              "references": [
+                "azurerm_user_assigned_identity.workload.id",
+                "azurerm_user_assigned_identity.workload"
+              ]
+            },
+            "issuer": {
+              "references": [
+                "azurerm_kubernetes_cluster.aks.oidc_issuer_url",
+                "azurerm_kubernetes_cluster.aks"
+              ]
+            }
+          }
+        },
+        {
+          "address": "azurerm_storage_account.logs",
+          "mode": "managed",
+          "type": "azurerm_storage_account",
+          "name": "logs",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "resource_group_name": {
+              "references": [
+                "azurerm_resource_group.platform.name",
+                "azurerm_resource_group.platform"
+              ]
+            }
+          }
+        },
+        {
+          "address": "azurerm_role_assignment.workload_logs_reader",
+          "mode": "managed",
+          "type": "azurerm_role_assignment",
+          "name": "workload_logs_reader",
+          "provider_config_key": "azurerm",
+          "expressions": {
+            "scope": {
+              "references": [
+                "azurerm_storage_account.logs.id",
+                "azurerm_storage_account.logs"
+              ]
+            },
+            "principal_id": {
+              "references": [
+                "azurerm_user_assigned_identity.workload.principal_id",
+                "azurerm_user_assigned_identity.workload"
+              ]
+            }
+          }
+        },
+        {
+          "address": "azuread_application.gcp_bridge",
+          "mode": "managed",
+          "type": "azuread_application",
+          "name": "gcp_bridge",
+          "provider_config_key": "azuread",
+          "expressions": {}
+        },
+        {
+          "address": "azuread_application_federated_identity_credential.from_gcp",
+          "mode": "managed",
+          "type": "azuread_application_federated_identity_credential",
+          "name": "from_gcp",
+          "provider_config_key": "azuread",
+          "expressions": {
+            "application_id": {
+              "references": [
+                "azuread_application.gcp_bridge.id",
+                "azuread_application.gcp_bridge"
+              ]
+            },
+            "subject": {
+              "references": [
+                "data.terraform_remote_state.gcp.outputs.bridge_sa_unique_id",
+                "data.terraform_remote_state.gcp.outputs",
+                "data.terraform_remote_state.gcp"
+              ]
+            }
+          }
+        },
+        {
+          "address": "azuread_application_federated_identity_credential.reporting",
+          "mode": "managed",
+          "type": "azuread_application_federated_identity_credential",
+          "name": "reporting",
+          "provider_config_key": "azuread",
+          "expressions": {
+            "application_id": {
+              "references": [
+                "azuread_application.gcp_bridge.id",
+                "azuread_application.gcp_bridge"
+              ]
+            },
+            "subject": {
+              "references": [
+                "data.terraform_remote_state.gcp.outputs.bridge_sa_email",
+                "data.terraform_remote_state.gcp.outputs",
+                "data.terraform_remote_state.gcp"
+              ]
+            }
+          }
+        },
+        {
+          "address": "data.terraform_remote_state.gcp",
+          "mode": "data",
+          "type": "terraform_remote_state",
+          "name": "gcp",
+          "provider_config_key": "terraform",
+          "expressions": {
+            "backend": {
+              "constant_value": "gcs"
+            }
+          }
+        }
+      ]
+    }
+  }
+}
