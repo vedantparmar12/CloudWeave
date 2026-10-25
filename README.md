@@ -156,6 +156,7 @@ There are no tabs: just the graph and a side panel.
 
 - JSON files (raw state or `terraform show -json`), PostgreSQL snapshots, and mixed inputs share the same graph. Source labels identify their origin without connection details. **Inputs & help** explains each workflow; the HTML itself never connects to a database.
 - With a plan, the graph starts with changed resources, their dependencies and impact. Switch to **All resources** to explore the full inventory within the node limit. Without a plan, this view is the default.
+- **Dependency order** follows Terraform's recorded state dependencies and plan configuration references, placing resources in layers from dependencies to dependents. A cycle leaves resources unresolved; they are grouped separately and raise CW505.
 - Search any resource (press `/`) and open its neighborhood on the same canvas. Reset restores the starting graph; the state filter narrows it.
 - Select a resource for its change explanation, findings, suggested fix templates and modeled operations. The inspector can be hidden for more canvas space; on mobile, it stacks below the graph.
 - Choose **System**, **Dark**, or **Light**. Only the theme preference is saved in browser storage; analysis data is not.
@@ -167,7 +168,7 @@ The step list shows before/after presence, warnings and limitations. It is not T
 
 Fix templates use placeholders rather than secrets or interpolated input. Review and adapt them before use; CloudWeave never runs commands, changes authentication or applies fixes. Suggestions involving state ownership or trust changes require coordination. A fixed IAM wait or `create_before_destroy` alone cannot guarantee a safe cross-state migration.
 
-The inspector's suggested state order ignores low-confidence and federation links. It is a planning aid, not an apply execution schedule.
+The inspector's suggested state order ignores low-confidence and federation links. It is a planning aid, not an apply execution schedule. Dependency layers use only recorded state dependencies and configuration references; remote-state, identifier and federation links remain visible but do not constrain the order.
 
 ## Rules
 
@@ -218,6 +219,7 @@ The inspector's suggested state order ignores low-confidence and federation link
 | CW502 | medium | Consumer holds a stale copy of producer outputs |
 | CW503 | high | Same cloud resource managed by two states |
 | CW504 | medium | States depend on each other in a cycle, so no safe apply order exists |
+| CW505 | medium | Recorded dependencies and configuration references leave no complete resource order (a cycle, or resources depending on one) |
 | CW601 | high | Pseudo-apply model has missing dependencies or unresolved operations |
 | CW602 | medium | Changed resources run provisioners, which `terraform plan` never executes |
 | CW603 | medium | Recorded replacement order destroys first although the configuration declares `create_before_destroy` |

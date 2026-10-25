@@ -112,7 +112,13 @@ func TestSimulationBlocksFailOnHigh(t *testing.T) {
 		if err := json.Unmarshal([]byte(out), &result); err != nil {
 			t.Fatal(err)
 		}
-		if result.Verdict != "review" || result.Simulation.Blocked != 2 || len(result.Findings) != 1 || result.Findings[0].Rule != "CW601" {
+		hasCW601 := false
+		for _, f := range result.Findings {
+			if f.Rule == "CW601" {
+				hasCW601 = true
+			}
+		}
+		if result.Verdict != "review" || result.Simulation.Blocked != 2 || !hasCW601 {
 			t.Fatalf("unresolved simulation not reflected in verdict: %s", out)
 		}
 	}

@@ -19,7 +19,7 @@ func fixTestFindings() []Finding {
 		CW101 CW102 CW103 CW104 CW201 CW202 CW203 CW204 CW205 CW206
 		CW301 CW302 CW303 CW304 CW305 CW306 CW307 CW308 CW309 CW310
 		CW311 CW312 CW313 CW314 CW401 CW402 CW403 CW404 CW405 CW406
-		CW407 CW408 CW501 CW502 CW503 CW504 CW601 CW602 CW603`) {
+		CW407 CW408 CW501 CW502 CW503 CW504 CW505 CW601 CW602 CW603`) {
 		findings = append(findings, Finding{Rule: rule})
 	}
 	return append(findings,
@@ -242,6 +242,7 @@ func TestSafeFixMigrationAndCredentialSemantics(t *testing.T) {
 		{"CW205", []string{"verify object health", "Do not clear a taint", "protected backup"}},
 		{"CW602", []string{"Provisioners execute only during apply", "never place secrets"}},
 		{"CW603", []string{"create_before_destroy", "deposed objects", "confirm consumers can tolerate"}},
+		{"CW505", []string{"dependency direction", "refresh the state snapshot", "not treat the unresolved layer group as an execution schedule"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.rule, func(t *testing.T) {

@@ -53,15 +53,16 @@ CloudWeave does not keep a shadow backend in sync. It analyzes exported snapshot
       - Index tenants, apps, principals, pools, providers, service accounts, IAM grants and federated identity credentials.
       - Validate the trust chain both ways (Azure → GCP WIF, and GCP → Entra FIC).
       - Add federation edges.
-   6. **Change cone**:
+   6. **Dependency layers**: compute the longest dependency chain for each node over recorded dependency edges only. Remote-state, identifier and federation links stay visible but do not constrain the order. Nodes in a cycle, or depending on one, get layer `-1` and raise CW505; layer 0 has no recorded dependencies.
+   7. **Change cone**:
       - Seeds are mutations and drift.
       - Downstream is a BFS over dependents, across states.
       - Upstream is the direct dependencies of the seeds.
       - Per-seed impact counts include cross-state counts.
-   7. Run plan, drift, provisioner, blast-radius, state-hygiene and (optionally) credential checks.
-   8. **Apply order**: collapse cross-state edges (excluding low-confidence and federation edges, since trust can be wired in either order) into a state graph and order it topologically. Cycles raise CW504.
-   9. **Pseudo-apply**: copy resource presence into an in-memory model; build a deterministic operation DAG from recorded plan actions and same-state dependency edges. Preserve replacement phase order, reverse destroy dependencies and retain objects for forget operations. Unchanged resources can connect operations. Cycles, mixed instance actions and deposed objects stay unresolved. Model failures do not transition objects; dependent operations become blocked. Cross-state consumers, federation, IAM propagation and credential expiry are conditional warnings, not observed failures. Other states get follow-up planning reminders only.
-   10. Attach static fix templates using placeholders, not values or executable interpolated metadata. Add CW601 for model failures/unresolved operations, sort findings and derive the verdict.
+   8. Run plan, drift, provisioner, blast-radius, state-hygiene and (optionally) credential checks.
+   9. **Apply order**: collapse cross-state edges (excluding low-confidence and federation edges, since trust can be wired in either order) into a state graph and order it topologically. Cycles raise CW504.
+   10. **Pseudo-apply**: copy resource presence into an in-memory model; build a deterministic operation DAG from recorded plan actions and same-state dependency edges. Preserve replacement phase order, reverse destroy dependencies and retain objects for forget operations. Unchanged resources can connect operations. Cycles, mixed instance actions and deposed objects stay unresolved. Model failures do not transition objects; dependent operations become blocked. Cross-state consumers, federation, IAM propagation and credential expiry are conditional warnings, not observed failures. Other states get follow-up planning reminders only.
+   11. Attach static fix templates using placeholders, not values or executable interpolated metadata. Add CW601 for model failures/unresolved operations, sort findings and derive the verdict.
 3. **Report** (`internal/report`)
    - A JSON schema (`cloudweave.report/v1`) carries metadata only.
    - The HTML file embeds that JSON in a non-executable script tag and renders it with vanilla JS/SVG.
@@ -79,7 +80,7 @@ One graph page replaces the previous tabs. With a plan it starts with changed/im
 
 The same graph accepts file, PostgreSQL, and plan-prior snapshots. Loaders retain only an enum (`file`, `postgresql`, `plan`) for source provenance, independently of state format. The header summarizes input modes; the input help panel provides static CLI examples. The report has no live database connection or state upload path.
 
-A collapsible side panel holds all findings (including global findings), resource explanations, display-only fix templates, and the pseudo-apply timeline. State and view filters plus graph reset keep navigation on one page. All-resources mode is available even with a plan. The inspector's state order is advisory, not an execution schedule.
+A collapsible side panel holds all findings (including global findings), resource explanations, display-only fix templates, and the pseudo-apply timeline. State and view filters plus graph reset keep navigation on one page. All-resources mode is available even with a plan. Dependency order lays every resource out by recorded dependency layer, grouping nodes that cannot be ordered separately. The inspector's state order is advisory, not an execution schedule.
 
 Semantic CSS tokens supply dark/light themes with a system option; browser storage contains only the theme preference. Pan and zoom use a single SVG transform, with keyboard controls as well as pointer input. Node labels are clipped inside non-overlapping cards; full addresses remain in tooltips and the inspector. Mobile stacks the inspector below a canvas with a minimum usable height. SVG export resolves theme colors and fonts to inline styles. The implementation remains original vanilla JS/SVG, with no embedded third-party visualizer.
 

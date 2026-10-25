@@ -137,6 +137,7 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 	a.applyConfigMetadata()
 	a.linkCrossState()
 	a.analyzeFederation()
+	a.checkDependencyOrder()
 	seeds := a.computeCone()
 	a.checkPlan()
 	a.checkDrift()

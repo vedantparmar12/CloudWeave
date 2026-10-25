@@ -59,6 +59,11 @@ type Node struct {
 	HasForEach          bool     `json:"has_for_each,omitempty"`
 	PreventDestroy      bool     `json:"prevent_destroy,omitempty"`
 	CreateBeforeDestroy bool     `json:"create_before_destroy,omitempty"`
+	// Layer is the longest recorded dependency chain below this node. A value
+	// of -1 means a cycle prevents a complete order. Unordered marks those
+	// nodes; layer 0 has no modeled dependencies.
+	Layer     int  `json:"layer"`
+	Unordered bool `json:"unordered,omitempty"`
 }
 
 // Edge means From depends on To.

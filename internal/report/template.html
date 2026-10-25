@@ -30,7 +30,7 @@ aside{width:clamp(310px,29vw,420px);max-width:100%;flex-shrink:0;border:1px soli
 <div class="toolbar" aria-label="Graph controls">
   <div class="search"><input id="q" type="search" aria-label="Search all resources" aria-controls="results" placeholder="Find a resource, module or state…  /"><div id="results" class="results" hidden></div></div>
   <label>State <select id="state" aria-label="Filter graph by state"><option value="">All states</option></select></label>
-  <label>View <select id="view" aria-label="Graph view"><option value="impact">Change impact</option><option value="all">All resources</option></select></label>
+  <label>View <select id="view" aria-label="Graph view"><option value="impact">Change impact</option><option value="all">All resources</option><option value="order">Dependency order</option></select></label>
   <button id="sources">Inputs &amp; help</button><button id="simulate">Pseudo apply</button>
 </div>
 <div class="layout">
@@ -53,6 +53,7 @@ aside{width:clamp(310px,29vw,420px);max-width:100%;flex-shrink:0;border:1px soli
 var R=JSON.parse(document.getElementById("cw-data").textContent);
 var nodes=R.nodes||[], findings=R.findings||[], NODES=new Map(), OUT=new Map(), IN=new Map(), RELATED=new Map();
 var MAX=Number(R.max_nodes); MAX=Number.isFinite(MAX)&&MAX>=1?Math.floor(MAX):400;
+var ORDER_UNRESOLVED=1000000000;
 var selected=null, focus=null, visible=new Map();
 var CLOUD=new Map([["azure","#3b8eea"],["gcp","#34a853"],["aws","#ff9900"],["kubernetes","#8c6cf0"]]);
 var ACT=new Map([["create","#3fb950"],["update","#d29922"],["delete","#f85149"],["replace","#db61a2"],["forget","#f85149"]]);
@@ -141,7 +142,7 @@ $("export").addEventListener("click",exportSVG);
 
 // Apply the global budget before layout; focus is inserted before all other nodes.
 function candidates(){
-  var cols=new Map(),filter=stateFilter();
+  var cols=new Map(),filter=stateFilter(),orderMode=$("view").value==="order";
   if(focus&&NODES.has(focus)){
     cols.set(focus,0);var upstream=[focus],downstream=[focus];
     for(var d=1;d<=2&&cols.size<MAX;d++){
@@ -157,7 +158,8 @@ function candidates(){
   }
   var ranks=new Map(),seeds=new Set(R.seeds||[]),allResources=$("view").value==="all";
   nodes.forEach(function(n){
-    if(allResources) ranks.set(n.id,RELATED.get(n.id).length?0:1);
+    if(orderMode) ranks.set(n.id,n.layer<0?ORDER_UNRESOLVED:n.layer||0);
+    else if(allResources) ranks.set(n.id,RELATED.get(n.id).length?0:1);
     else if(changed(n)||seeds.has(n.id)) ranks.set(n.id,0);
     else if(n.role==="impacted") ranks.set(n.id,1);
     else if(n.role==="dependency") ranks.set(n.id,2);
@@ -166,22 +168,24 @@ function candidates(){
   if(!allResources) Array.from(ranks).forEach(function(pair){if(pair[1]>1)return;OUT.get(pair[0]).forEach(function(e){if(!ranks.has(e.to)||ranks.get(e.to)>2)ranks.set(e.to,2);});});
   var buckets=new Map(),total=0;
   ranks.forEach(function(rank,id){var n=NODES.get(id);if(filter!==null&&n.state!==filter)return;total++;if(!buckets.has(rank))buckets.set(rank,new Map());var states=buckets.get(rank);if(!states.has(n.state))states.set(n.state,[]);states.get(n.state).push(id);});
-  function add(id){if(!NODES.has(id)||cols.size>=MAX||cols.has(id))return;var n=NODES.get(id);if(filter!==null&&n.state!==filter)return;var rank=ranks.get(id);cols.set(id,allResources?n.state:rank===2?-1:rank===1?1:rank===3?2:0);}
+  function add(id){if(!NODES.has(id)||cols.size>=MAX||cols.has(id))return;var n=NODES.get(id);if(filter!==null&&n.state!==filter)return;var rank=ranks.get(id);cols.set(id,orderMode?rank:allResources?n.state:rank===2?-1:rank===1?1:rank===3?2:0);}
   if(selected)add(selected);
   // Round-robin states within each priority, rather than exhausting the first state.
-  Array.from(buckets.keys()).sort().forEach(function(rank){var lists=Array.from(buckets.get(rank).values()),i=0,more=true;while(more&&cols.size<MAX){more=false;lists.forEach(function(list){if(i<list.length){more=true;add(list[i]);}});i++;}});
+  Array.from(buckets.keys()).sort(function(a,b){return a-b;}).forEach(function(rank){var lists=Array.from(buckets.get(rank).values()),i=0,more=true;while(more&&cols.size<MAX){more=false;lists.forEach(function(list){if(i<list.length){more=true;add(list[i]);}});i++;}});
   return {cols:cols,total:total};
 }
 function renderGraph(recenter){
-  clear(box);pz.root=null;visible=new Map();var data=candidates(),cols=data.cols;
+  clear(box);pz.root=null;visible=new Map();var data=candidates(),cols=data.cols,view=$("view").value,orderMode=view==="order";
   ["export","fit","zoom-in","zoom-out"].forEach(function(id){$(id).disabled=!cols.size;});
-  $("graph-title").textContent=focus?"Resource neighborhood":$("view").value==="impact"?"Change impact":"Resource graph";
-  $("graph-context").textContent=focus?"Two hops · dependencies on the left, dependents on the right":$("view").value==="impact"?"Follow planned changes across state boundaries":"All input types, connected in one workspace";
-  $("graph-info").textContent=cols.size+" of "+nodes.length+" resources shown"+(data.total!==null&&data.total>cols.size?" · "+(data.total-cols.size)+" omitted by the "+MAX+"-node limit":"")+" · "+(nodes.length>cols.size?"Search includes hidden resources.":"Select a resource to see why it matters.");
+  $("graph-title").textContent=focus?"Resource neighborhood":view==="impact"?"Change impact":orderMode?"Dependency order":"Resource graph";
+  $("graph-context").textContent=focus?"Two hops · dependencies on the left, dependents on the right":view==="impact"?"Follow planned changes across state boundaries":orderMode?"Recorded dependencies first · advisory links do not constrain order":"All input types, connected in one workspace";
+  var info=cols.size+" of "+nodes.length+" resources shown"+(data.total!==null&&data.total>cols.size?" · "+(data.total-cols.size)+" omitted by the "+MAX+"-node limit":"")+" · "+(nodes.length>cols.size?"Search includes hidden resources.":"Select a resource to see why it matters.");
+  if(orderMode&&!focus){var filter=stateFilter(),last=-1,unresolved=0;nodes.forEach(function(n){if(filter!==null&&n.state!==filter)return;if(n.layer<0)unresolved++;else last=Math.max(last,n.layer||0);});info+=" · "+(last+1)+" layers"+(unresolved?" · "+unresolved+" unresolved":"");}
+  $("graph-info").textContent=info;
   if(!cols.size){$("zoom-level").textContent="—";box.appendChild(h("div",{class:"empty",text:!nodes.length?"No resources in this report. Findings are still available.":"No resources match this view. Search all resources, switch to All resources, or choose another state."}));return;}
   var groups=new Map();cols.forEach(function(c,id){if(!groups.has(c))groups.set(c,[]);groups.get(c).push(id);});
   var keys=Array.from(groups.keys()).sort(function(a,b){return typeof a==="number"?a-b:String(a).localeCompare(String(b));});
-  var stateMode=$("view").value==="all"&&!focus,W=250,H=58,GX=42,GY=16,P=24,groupData=[],maxW=0,maxH=0;
+  var stateMode=view==="all"&&!focus,W=250,H=58,GX=42,GY=16,P=24,groupData=[],maxW=0,maxH=0;
   keys.forEach(function(key){
     var ids=groups.get(key).sort(function(a,b){var x=NODES.get(a),y=NODES.get(b);return String(x.state).localeCompare(String(y.state))||String(x.address).localeCompare(String(y.address));});
     var rows=ids.length<=12?ids.length:Math.ceil(Math.sqrt(ids.length*3)),columns=Math.ceil(ids.length/rows),w=columns*(W+GX)+P,h=rows*(H+GY)+60;
@@ -196,7 +200,7 @@ function renderGraph(recenter){
   var svg=s("svg",{role:"group","aria-label":"Interactive resource graph"}),root=s("g",{class:"root"}),defs=s("defs"),nodeEls=new Map(),edgeEls=[];
   var labelClip=s("clipPath",{id:"node-label-clip"});labelClip.appendChild(s("rect",{x:10,y:0,width:W-22,height:H}));defs.appendChild(labelClip);
   EDGE.forEach(function(st,k){var m=s("marker",{id:"m-"+k,viewBox:"0 0 10 10",refX:10,refY:5,markerWidth:6,markerHeight:6,orient:"auto"});m.appendChild(s("path",{d:"M0,0L10,5L0,10z",fill:st[0]}));defs.appendChild(m);});svg.appendChild(defs);svg.appendChild(root);
-  groupData.forEach(function(g){var label=stateMode?g.key:focus?(g.key===0?"Selected resource":g.key<0?"Dependencies · "+Math.abs(g.key):"Dependents · "+g.key):g.key===-1?"Direct dependencies":g.key===0?"Changed":g.key===1?"Impacted":"Other findings";root.appendChild(s("rect",{class:"group-bg",x:g.x-10,y:g.y-8,width:g.w-8,height:g.h-12,rx:12}));var text=s("text",{class:"group-label",x:g.x+2,y:g.y+14,text:short(label,34)+" · "+g.ids.length});text.appendChild(s("title",{text:String(label)}));root.appendChild(text);});
+  groupData.forEach(function(g){var label=stateMode?g.key:focus?(g.key===0?"Selected resource":g.key<0?"Dependencies · "+Math.abs(g.key):"Dependents · "+g.key):orderMode?(g.key===ORDER_UNRESOLVED?"Unresolved order":g.key===0?"Layer 0 · no recorded deps":"Layer "+g.key):g.key===-1?"Direct dependencies":g.key===0?"Changed":g.key===1?"Impacted":"Other findings";root.appendChild(s("rect",{class:"group-bg",x:g.x-10,y:g.y-8,width:g.w-8,height:g.h-12,rx:12}));var text=s("text",{class:"group-label",x:g.x+2,y:g.y+14,text:short(label,34)+" · "+g.ids.length});text.appendChild(s("title",{text:String(label)}));root.appendChild(text);});
   edges.forEach(function(e){
     var a=visible.get(e.to),b=visible.get(e.from);if(!a||!b)return;var x1=a[0]+W,x2=b[0],y1=a[1]+H/2,y2=b[1]+H/2;
     if(a[0]>b[0]){x1=a[0];x2=b[0]+W;}if(a[0]===b[0])x2=b[0]+W;
@@ -222,6 +226,7 @@ function panel(title){setInspector(true);var el=clear($("detail"));el.appendChil
 function showSources(){
   var el=panel("One graph. Both input modes.");
   el.appendChild(h("p",{text:"Use Terraform JSON snapshots, PostgreSQL backend snapshots, or both in the same analysis. Connections come from resource dependencies and matched cross-state evidence, not from the input format."}));
+  el.appendChild(h("p",{class:"small",text:"Dependency order follows recorded state dependencies and plan configuration references. Remote-state, identifier and federation links stay visible but do not constrain the order; layer 0 has no recorded dependencies."}));
   el.appendChild(h("h3",{text:"Included in this report"}));
   (R.states||[]).forEach(function(st){el.appendChild(h("div",{class:"source-row"},h("strong",{class:"mono",text:st.name}),h("span",{class:"source-mode",text:sourceLabel(st)+(st.primary?" · primary state":"")}),h("p",{class:"small",text:(st.resources||0)+" resources · "+(st.data_sources||0)+" data sources"})));});
   if(!(R.states||[]).length)el.appendChild(h("p",{class:"small",text:"No state inputs were included."}));
@@ -251,7 +256,7 @@ function findingEl(f){
 function showFindings(){
   var el=panel("All findings ("+findings.length+")");
   var guide=h("details",{class:"start-guide"},h("summary",{text:"How to read this graph"})),list=h("ol");
-  ["Search any resource, including those outside the visible node limit.","Select a card to explore dependencies, impact and the reason for a change.","Review findings and fix suggestions. Pseudo apply models risks; it never executes Terraform."].forEach(function(text){list.appendChild(h("li",{text:text}));});guide.appendChild(list);guide.appendChild(h("p",{class:"small",text:"Card borders show actions or drift; the left stripe identifies the cloud. Connection arrows run from dependencies to their dependents. Dashed purple connections are identifier matches."}));el.appendChild(guide);
+  ["Search any resource, including those outside the visible node limit.","Select a card to explore dependencies, impact and the reason for a change.","Dependency order groups resources into recorded dependency layers; a cycle leaves no valid order.","Review findings and fix suggestions. Pseudo apply models risks; it never executes Terraform."].forEach(function(text){list.appendChild(h("li",{text:text}));});guide.appendChild(list);guide.appendChild(h("p",{class:"small",text:"Card borders show actions or drift; the left stripe identifies the cloud. Connection arrows run from dependencies to their dependents. Dashed purple connections are identifier matches."}));el.appendChild(guide);
   el.appendChild(h("p",{id:"apply-order",class:"small",text:"Advisory apply order: "+((R.apply_order||[]).join(" → ")||"not available")+". Ignores federation; not a guaranteed execution order."}));
   el.appendChild(h("p",{class:"notice",text:R.disclaimer||"Offline, read-only preflight. No cloud calls or state writes. A clean report does not guarantee success."}));
   if(!R.plan)el.appendChild(h("p",{class:"small",text:"State-only graph · no plan supplied. Pseudo apply is unavailable."}));else if(!R.simulation)el.appendChild(h("p",{class:"small",text:"No pseudo-apply simulation was included in this report."}));
@@ -260,7 +265,7 @@ function showFindings(){
 function openNode(id){
   if(!focusNode(id)){var missing=panel("Resource not in snapshot");missing.appendChild(h("p",{class:"mono",text:id}));missing.appendChild(h("p",{text:"This reference has no graph node. Related findings remain available."}));findings.filter(function(f){return(f.nodes||[]).includes(id);}).forEach(function(f){missing.appendChild(findingEl(f));});$("detail-title").focus();return;}
   var n=NODES.get(id),el=panel(n.address||id);$("results").hidden=true;
-  var kv=h("dl",{class:"kv"});[["State",n.state],["Source",sourceLabel(stateDetails.get(n.state))],["Type",n.type],["Provider",n.provider||n.cloud],["Action",n.action||"none"],["Drift",n.drift||"none"],["Impact",(n.impact||0)+" downstream; "+(n.cross_impact||0)+" cross-state"]].forEach(function(pair){kv.appendChild(h("dt",{text:pair[0]}));kv.appendChild(h("dd",{class:"mono",text:pair[1]||"—"}));});el.appendChild(kv);
+  var layer=n.layer==null?0:n.layer,kv=h("dl",{class:"kv"});[["State",n.state],["Source",sourceLabel(stateDetails.get(n.state))],["Type",n.type],["Provider",n.provider||n.cloud],["Action",n.action||"none"],["Drift",n.drift||"none"],["Graph layer",layer<0?"unresolved":String(layer)],["Impact",(n.impact||0)+" downstream; "+(n.cross_impact||0)+" cross-state"]].forEach(function(pair){kv.appendChild(h("dt",{text:pair[0]}));kv.appendChild(h("dd",{class:"mono",text:pair[1]||"—"}));});el.appendChild(kv);
   el.appendChild(h("h3",{text:"Why"}));el.appendChild(h("p",{text:whyText(n)||(R.plan?"No change reason recorded for this resource.":"State snapshot only; no planned change to explain.")}));
   var related=RELATED.get(id);el.appendChild(h("h3",{text:"Findings ("+related.length+")"}));related.forEach(function(f){el.appendChild(findingEl(f));});if(!related.length)el.appendChild(h("p",{class:"small",text:"No resource-specific findings. All findings also includes global checks."}));
   el.appendChild(h("h3",{text:"Related pseudo-apply steps"}));var count=0;

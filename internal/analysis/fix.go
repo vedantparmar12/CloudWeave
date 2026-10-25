@@ -155,6 +155,11 @@ func fixTemplates(f *Finding) []FixStep {
 		}
 	case "CW504":
 		return []FixStep{{Text: "Review the cycle with all state owners. Give shared resources and outputs a single owner or remove a cyclic output dependency through an independently reviewed design. Replan all consumers after breaking the cycle; there is no safe universal ordering for the existing cycle."}}
+	case "CW505":
+		return []FixStep{
+			{Text: "Confirm the dependency direction in the current configuration. A cycle prevents a complete Terraform order; if it mixes recorded state edges with a newer configuration, refresh the state snapshot and plan from the same revision."},
+			{fixBash + "After a fresh full plan succeeds without a dependency cycle, rerun CloudWeave. Do not treat the unresolved layer group as an execution schedule.", replan},
+		}
 	case "CW601":
 		return []FixStep{{fixBash + "Review the simulation's blocked paths, missing dependencies and per-instance replacement actions against the full plan. Resolve uncertain ordering with the owner; the offline model is not proof of a cloud failure.", replan}}
 	default:
