@@ -16,6 +16,7 @@ import (
 	"github.com/vedantparmar12/cloudweave/internal/analysis"
 	"github.com/vedantparmar12/cloudweave/internal/report"
 	"github.com/vedantparmar12/cloudweave/internal/state"
+	"github.com/vedantparmar12/cloudweave/internal/tfconfig"
 )
 
 const (
@@ -78,6 +79,7 @@ type analyzeFlags struct {
 	pgWorkspace      string
 	plan             string
 	primary          string
+	config           string
 	htmlOut          string
 	jsonOut          string
 	mdOut            string
@@ -112,6 +114,7 @@ func newAnalyze(version string) *cobra.Command {
 	fl.StringVar(&f.pgWorkspace, "pg-workspace", state.DefaultPGWorkspace, "PostgreSQL backend workspace for all --pg-state inputs")
 	fl.StringVarP(&f.plan, "plan", "p", "", "plan JSON from `terraform show -json tfplan`")
 	fl.StringVar(&f.primary, "primary-state", "", "name or path of the state the plan applies to (auto-detected by default)")
+	fl.StringVar(&f.config, "config", "", "Terraform configuration directory for lifecycle and remote-state hints (literals only; expressions are never evaluated)")
 	fl.StringVarP(&f.htmlOut, "out", "o", "", "write a self-contained HTML report to this path")
 	fl.StringVar(&f.jsonOut, "json", "", "write the JSON report to this path (- for stdout)")
 	fl.StringVar(&f.mdOut, "markdown", "", "write a Markdown summary for pull request comments to this path (- for stdout)")
@@ -165,6 +168,14 @@ func runAnalyze(ctx context.Context, stdout io.Writer, version string, f *analyz
 		plan = p
 		inputs = append(inputs, f.plan)
 	}
+	var cfg *tfconfig.Config
+	if f.config != "" {
+		c, err := tfconfig.Load(f.config)
+		if err != nil {
+			return fmt.Errorf("--config: %w", err)
+		}
+		cfg = c
+	}
 
 	outs := []string{f.htmlOut, f.jsonOut, f.mdOut}
 	for i, out := range outs {
@@ -198,6 +209,7 @@ func runAnalyze(ctx context.Context, stdout io.Writer, version string, f *analyz
 		BlastRadius:      f.blastRadius,
 		RevealIDs:        f.revealIDs,
 		CheckCredentials: f.checkCredentials,
+		Config:           cfg,
 	})
 	if err != nil {
 		return err
@@ -265,6 +277,9 @@ func checkOutputPath(out string, inputs []string) error {
 	if strings.HasSuffix(base, ".tfstate") || strings.HasSuffix(base, ".tfstate.backup") ||
 		strings.Contains(base, ".tfstate.") || base == "terraform.tfstate" {
 		return fmt.Errorf("refusing to write report to %s: it looks like a Terraform state file", out)
+	}
+	if strings.HasSuffix(base, ".tf") || strings.HasSuffix(base, ".tf.json") {
+		return fmt.Errorf("refusing to write report to %s: it looks like a Terraform configuration file", out)
 	}
 	absOut, err := filepath.Abs(out)
 	if err != nil {

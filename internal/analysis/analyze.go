@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/vedantparmar12/cloudweave/internal/state"
+	"github.com/vedantparmar12/cloudweave/internal/tfconfig"
 )
 
 // Options controls analysis. The zero value is usable.
@@ -26,8 +27,11 @@ type Options struct {
 	RevealIDs bool
 	// CheckCredentials inspects local credential env vars and files.
 	CheckCredentials bool
-	Now              time.Time
-	Getenv           func(string) string
+	// Config is an optional parse of the primary state's Terraform
+	// configuration directory (literals only; expressions are never evaluated).
+	Config *tfconfig.Config
+	Now    time.Time
+	Getenv func(string) string
 }
 
 func (o *Options) defaults() {
@@ -51,6 +55,7 @@ func (o *Options) defaults() {
 type StateSummary struct {
 	Name             string         `json:"name"`
 	Format           state.Format   `json:"format"`
+	Source           state.Source   `json:"source"`
 	TerraformVersion string         `json:"terraform_version,omitempty"`
 	Serial           *int64         `json:"serial,omitempty"`
 	Lineage          string         `json:"lineage,omitempty"`
@@ -82,11 +87,19 @@ type Result struct {
 	Verdict     string         `json:"verdict"`
 	States      []StateSummary `json:"states"`
 	Plan        *PlanSummary   `json:"plan,omitempty"`
+	Config      *ConfigSummary `json:"config,omitempty"`
 	Findings    []Finding      `json:"findings"`
 	Seeds       []string       `json:"seeds"`
 	ApplyOrder  []string       `json:"apply_order,omitempty"`
 	Simulation  *Simulation    `json:"simulation,omitempty"`
 	Graph       *Graph         `json:"-"`
+}
+
+// ConfigSummary describes the optionally supplied configuration directory.
+// It contains only the path and literal required_version.
+type ConfigSummary struct {
+	Path            string `json:"path"`
+	RequiredVersion string `json:"required_version,omitempty"`
 }
 
 type analyzer struct {
@@ -96,6 +109,7 @@ type analyzer struct {
 	primary  *state.State
 	g        *Graph
 	findings []Finding
+	cfg      *tfconfig.Config
 	// changed outputs of the primary state consumed by other states
 	remoteLinks []remoteLink
 	credLeft    *time.Duration
@@ -108,7 +122,7 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 	if len(states) == 0 && plan == nil {
 		return nil, fmt.Errorf("nothing to analyze: provide at least one --state or a --plan")
 	}
-	a := &analyzer{opts: opts, states: states, plan: plan, g: NewGraph()}
+	a := &analyzer{opts: opts, states: states, plan: plan, g: NewGraph(), cfg: opts.Config}
 	uniqueNames(a.states)
 
 	if err := a.choosePrimary(); err != nil {
@@ -120,11 +134,13 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 	if a.plan != nil && a.primary != nil {
 		a.applyPlan()
 	}
+	a.applyConfigMetadata()
 	a.linkCrossState()
 	a.analyzeFederation()
 	seeds := a.computeCone()
 	a.checkPlan()
 	a.checkDrift()
+	a.checkProvisioners()
 	a.checkBlastRadius(seeds)
 	a.checkStates()
 	if a.opts.CheckCredentials {
@@ -147,9 +163,14 @@ func Analyze(states []*state.State, plan *state.Plan, opts Options) (*Result, er
 	a.addFixes()
 
 	sortFindings(a.findings)
+	var configSummary *ConfigSummary
+	if a.cfg != nil {
+		configSummary = &ConfigSummary{Path: a.cfg.Path, RequiredVersion: a.cfg.RequiredVersion}
+	}
 	res := &Result{
 		GeneratedAt: opts.Now,
 		Verdict:     Verdict(a.findings),
+		Config:      configSummary,
 		Findings:    a.findings,
 		Seeds:       seeds,
 		ApplyOrder:  a.order,
@@ -280,6 +301,26 @@ func strongerAction(a, b string) string {
 	return a
 }
 
+func (a *analyzer) applyConfigMetadata() {
+	if a.cfg == nil || a.primary == nil {
+		return
+	}
+	for addr, res := range a.cfg.Resources {
+		for _, id := range a.g.Resolve(a.primary.Name, addr) {
+			if n := a.g.Nodes[id]; n != nil {
+				n.PreventDestroy = res.PreventDestroy
+				n.CreateBeforeDestroy = res.CreateBeforeDestroy
+				if res.Count {
+					n.HasCount = true
+				}
+				if res.ForEach {
+					n.HasForEach = true
+				}
+			}
+		}
+	}
+}
+
 func isMutation(action string) bool {
 	switch action {
 	case state.ActionCreate, state.ActionUpdate, state.ActionDelete, state.ActionReplace, state.ActionForget:
@@ -339,6 +380,24 @@ func (a *analyzer) applyPlan() {
 		for _, id := range a.g.Resolve(ps, d.Address) {
 			n := a.g.Nodes[id]
 			n.Drift = strongerAction(n.Drift, d.Action)
+		}
+	}
+	for addr, provs := range a.plan.ConfigProvisioners {
+		for _, id := range a.g.Lookup(ps, addr) {
+			n := a.g.Nodes[id]
+			for _, p := range provs {
+				n.Provisioners = appendUniqueStr(n.Provisioners, p)
+			}
+		}
+	}
+	for addr := range a.plan.ConfigCounts {
+		for _, id := range a.g.Lookup(ps, addr) {
+			a.g.Nodes[id].HasCount = true
+		}
+	}
+	for addr := range a.plan.ConfigForEach {
+		for _, id := range a.g.Lookup(ps, addr) {
+			a.g.Nodes[id].HasForEach = true
 		}
 	}
 	for from, deps := range a.plan.ConfigDeps {
@@ -409,13 +468,14 @@ func summarizeState(st *state.State, primary bool) StateSummary {
 	s := StateSummary{
 		Name:             st.Name,
 		Format:           st.Format,
+		Source:           st.Source,
 		TerraformVersion: st.TerraformVersion,
 		Serial:           st.Serial,
 		Lineage:          st.Lineage,
 		Outputs:          len(st.Outputs),
 		Clouds:           map[string]int{},
 		Primary:          primary,
-		FromPlan:         st.Name == "plan-prior-state",
+		FromPlan:         st.Source == state.SourcePlan,
 	}
 	for _, r := range st.Resources {
 		if r.Mode == "data" {

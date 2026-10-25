@@ -67,6 +67,9 @@ func TestLoadRawState(t *testing.T) {
 	if st.Format != FormatRaw || st.Lineage == "" || st.Serial == nil || *st.Serial != 42 {
 		t.Fatalf("unexpected metadata: %+v", st)
 	}
+	if st.Source != SourceFile {
+		t.Errorf("source = %q, want %q", st.Source, SourceFile)
+	}
 	aks := st.ResourceByAddress("azurerm_kubernetes_cluster.aks")
 	if aks == nil || aks.Cloud != CloudAzure {
 		t.Fatal("aks not loaded")
@@ -108,6 +111,9 @@ func TestLoadShowJSONState(t *testing.T) {
 	}
 	if st.Format != FormatShowJSON || len(st.Resources) != 2 || len(st.Outputs) != 1 || !st.Outputs[0].Sensitive {
 		t.Fatalf("unexpected state: %+v", st)
+	}
+	if st.Source != SourceFile {
+		t.Errorf("source = %q, want %q", st.Source, SourceFile)
 	}
 	r := st.ResourceByAddress(`module.m["a"].google_project_iam_member.r`)
 	if r == nil || r.Module != `module.m["a"]` || r.Instances[0].IndexKey != "0" {
@@ -161,7 +167,10 @@ func TestLoadPlan(t *testing.T) {
 		t.Errorf("changed outputs = %v", p.ChangedOutputs)
 	}
 	if p.PriorState == nil || p.PriorState.ResourceByAddress("azurerm_storage_account.logs") != nil {
-		t.Error("prior state should be refreshed and omit the drift-deleted storage account")
+		t.Fatal("prior state should be refreshed and omit the drift-deleted storage account")
+	}
+	if p.PriorState.Source != SourcePlan || p.PriorState.Format != FormatShowJSON {
+		t.Errorf("prior source/format = %q/%q, want %q/%q", p.PriorState.Source, p.PriorState.Format, SourcePlan, FormatShowJSON)
 	}
 	var foundRef bool
 	for _, r := range p.RemoteStateRefs {

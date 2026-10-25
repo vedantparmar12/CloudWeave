@@ -5,7 +5,7 @@
 CloudWeave reads Terraform state and plan JSON offline and answers the questions `terraform plan` doesn't:
 
 - **What is this 80k-line state?** One self-contained graph page with search, a suggested state order, and a resource side panel explaining changes, findings and fix steps. Local snapshots work without Terraform or cloud credentials; an optional read-only PostgreSQL input reads Terraform's `pg` backend directly.
-- **Why did plan succeed but apply fail?** It flags drift that overlaps or feeds planned changes, resources deleted out of band, stale saved plans, plan/state mismatch, version skew, eventually-consistent IAM grants and credentials that expire mid-apply.
+- **Why did plan succeed but apply fail?** It flags drift that overlaps or feeds planned changes, resources deleted out of band, stale saved plans, plan/state mismatch, version skew, eventually-consistent IAM grants, provisioners that only run at apply time and credentials that expire mid-apply.
 - **What breaks in my *other* states?** It stitches several states together through `terraform_remote_state` outputs, shared resource IDs and Azure ↔ GCP identity federation. A replacement in one state then shows up as an impact in the others, and CloudWeave tells you which state to apply first.
 - **Will the cross-cloud trust chain still work?** It runs static checks of GCP Workload Identity Federation and Entra ID federated credentials: issuer, audience, subject, attribute mapping/condition, disabled pools and replaced identities.
 
@@ -77,6 +77,7 @@ cloudweave analyze \
 | `--pg-workspace name` | `default` | Terraform workspace shared by all `--pg-state` inputs. |
 | `-p, --plan path` | | Plan JSON from `terraform show -json`. |
 | `--primary-state name` | auto | State the plan applies to. Auto-detected by matching resource IDs with the plan's prior state. |
+| `--config path` | | Terraform configuration directory (native `.tf` syntax, root module plus local modules) for lifecycle and remote-state hints. Literals only; expressions are never evaluated. |
 | `-o, --out path` | | Self-contained HTML report. |
 | `--json path\|-` | | Machine-readable report (`cloudweave.report/v1`). |
 | `--markdown path\|-` | | Markdown summary for pull-request comments: verdict, apply order, findings table and largest blast radius. |
@@ -110,6 +111,17 @@ cloudweave analyze \
 
 The reader begins a read-only transaction, selects the workspace using a bound parameter, then rolls back. It never takes Terraform advisory locks; PostgreSQL still takes normal read locks. Connect/read work has a 15-second deadline, with bounded cleanup afterward. `target_session_attrs` configurations that require extra connection-time SQL are rejected. Connection and parse errors omit driver details and credentials. Automated tests use a local fake PostgreSQL protocol server; a live PostgreSQL integration has not been verified.
 
+### Configuration directory (optional)
+
+Pass the primary state's configuration directory with `--config` to enrich the analysis with facts that are absent from plan JSON:
+
+- `lifecycle` flags (`prevent_destroy`, `create_before_destroy`) and count/for_each presence appear as node metadata and in the "why" text.
+- **CW603** flags replacements whose recorded order destroys the current object first even though the configuration declares `create_before_destroy`.
+- **CW206** tells you whether destroyed-because-removed resources are really absent from the configuration or still declared (count/for_each may just have evaluated to zero).
+- **CW501** names the remote-state backend and workspace, and points PostgreSQL backends at `--pg-state`.
+
+Only native-syntax `.tf` files are read, and only literals are extracted — expressions are never evaluated, so this needs no variables, providers or cloud access. Local module sources (`./`, `../`, optionally `//subdir`) are followed recursively, with module-prefixed addresses matching every module instance; registry, remote and dynamic module sources cannot be read offline, and CW206 caveats its absence claim rather than asserting it. Inside a `terraform_remote_state` config block only the `workspace` key may be read — in every module; credential-bearing keys such as `conn_string`, `access_key`, `secret_key`, `password` or `token` are never read, stored or logged, even when their values are literals.
+
 ### CI example
 
 ```yaml
@@ -142,10 +154,12 @@ Subject tokens are decoded without signature verification, only to compare `exp`
 
 There are no tabs: just the graph and a side panel.
 
-- With a plan, the graph starts with changed resources, their dependencies and impact. Without a plan, it shows a bounded state graph.
+- JSON files (raw state or `terraform show -json`), PostgreSQL snapshots, and mixed inputs share the same graph. Source labels identify their origin without connection details. **Inputs & help** explains each workflow; the HTML itself never connects to a database.
+- With a plan, the graph starts with changed resources, their dependencies and impact. Switch to **All resources** to explore the full inventory within the node limit. Without a plan, this view is the default.
 - Search any resource (press `/`) and open its neighborhood on the same canvas. Reset restores the starting graph; the state filter narrows it.
-- Select a resource for its change explanation, findings, suggested fix templates and modeled operations. All findings remain accessible, including findings with no resource.
-- Scroll to zoom, drag to pan, hover to trace neighbors, and export a standalone SVG.
+- Select a resource for its change explanation, findings, suggested fix templates and modeled operations. The inspector can be hidden for more canvas space; on mobile, it stacks below the graph.
+- Choose **System**, **Dark**, or **Light**. Only the theme preference is saved in browser storage; analysis data is not.
+- Scroll to zoom, drag to pan, hover to trace neighbors, and export a standalone SVG in the current theme. With the canvas focused, arrow keys pan, `+`/`-` zoom and `0` fits.
 
 **Pseudo apply** replays the supplied plan on an in-memory resource model. It preserves recorded create-before-destroy or destroy-before-create phases, reverses dependency order for deletes, and exposes unresolved cycles. It flags absent dependencies, possibly broken consumers, federation changes, IAM propagation and credential lifetime risks. Other states receive follow-up planning reminders, not fabricated applies.
 
@@ -153,7 +167,7 @@ The step list shows before/after presence, warnings and limitations. It is not T
 
 Fix templates use placeholders rather than secrets or interpolated input. Review and adapt them before use; CloudWeave never runs commands, changes authentication or applies fixes. Suggestions involving state ownership or trust changes require coordination. A fixed IAM wait or `create_before_destroy` alone cannot guarantee a safe cross-state migration.
 
-The header's suggested state order ignores low-confidence and federation links. It is a planning aid, not an apply execution schedule.
+The inspector's suggested state order ignores low-confidence and federation links. It is a planning aid, not an apply execution schedule.
 
 ## Rules
 
@@ -205,6 +219,8 @@ The header's suggested state order ignores low-confidence and federation links. 
 | CW503 | high | Same cloud resource managed by two states |
 | CW504 | medium | States depend on each other in a cycle, so no safe apply order exists |
 | CW601 | high | Pseudo-apply model has missing dependencies or unresolved operations |
+| CW602 | medium | Changed resources run provisioners, which `terraform plan` never executes |
+| CW603 | medium | Recorded replacement order destroys first although the configuration declares `create_before_destroy` |
 
 ## Limits
 

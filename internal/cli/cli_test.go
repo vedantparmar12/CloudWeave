@@ -442,3 +442,96 @@ func serveCLIPGWire(conn net.Conn, schema, workspace string, data []byte) error 
 		}
 	}
 }
+
+const cliConfigMainTF = `
+terraform {
+  required_version = ">= 1.9.0"
+}
+
+resource "null_resource" "cbd" {
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+data "terraform_remote_state" "prod" {
+  backend = "pg"
+
+  config = {
+    conn_string = "postgres://cw:CLI_SENTINEL_PASSWORD@db.example"
+    workspace   = "default"
+  }
+}
+`
+
+const cliConfigPlan = `{"format_version":"1.2","terraform_version":"1.9.5","complete":true,"applyable":true,
+ "resource_changes":[{"address":"null_resource.cbd","mode":"managed","type":"null_resource","name":"cbd",
+  "change":{"actions":["delete","create"],"before":{"id":"a"},"after":{"id":"b"}}}]}`
+
+func TestAnalyzeConfigFlag(t *testing.T) {
+	dir := t.TempDir()
+	cfgDir := filepath.Join(dir, "infra")
+	if err := os.Mkdir(cfgDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(cfgDir, "main.tf"), []byte(cliConfigMainTF), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	statePath, planPath := filepath.Join(dir, "s.tfstate.json"), filepath.Join(dir, "plan.json")
+	snapshot := `{"version":4,"terraform_version":"1.9.5","resources":[
+		{"mode":"managed","type":"null_resource","name":"cbd","instances":[{"attributes":{"id":"a"}}]}
+	]}`
+	for path, data := range map[string]string{statePath: snapshot, planPath: cliConfigPlan} {
+		if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	code, out, errs := run("analyze", "-s", "s="+statePath, "--primary-state", "s", "-p", planPath,
+		"--config", cfgDir, "--json", "-")
+	if code != 0 {
+		t.Fatalf("exit %d: %s", code, errs)
+	}
+	var result struct {
+		Config struct {
+			RequiredVersion string `json:"required_version"`
+		} `json:"config"`
+		Findings []struct {
+			Rule string `json:"rule"`
+		} `json:"findings"`
+	}
+	if err := json.Unmarshal([]byte(out), &result); err != nil {
+		t.Fatal(err)
+	}
+	if result.Config.RequiredVersion != ">= 1.9.0" {
+		t.Errorf("config.required_version = %q", result.Config.RequiredVersion)
+	}
+	var cw603 bool
+	for _, f := range result.Findings {
+		if f.Rule == "CW603" {
+			cw603 = true
+		}
+	}
+	if !cw603 {
+		t.Errorf("CW603 missing from findings: %s", out)
+	}
+	if strings.Contains(out, "CLI_SENTINEL_PASSWORD") || strings.Contains(out, "db.example") {
+		t.Error("terraform_remote_state conn_string leaked into the JSON report")
+	}
+
+	if code, _, errs := run("analyze", "-s", "s="+statePath, "-p", planPath, "--config", filepath.Join(dir, "missing"), "--json", "-"); code != 1 || !strings.Contains(errs, "--config") {
+		t.Errorf("missing config dir: exit %d, errs %q", code, errs)
+	}
+
+	brokenDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(brokenDir, "broken.tf"), []byte("resource \"a\" {\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if code, _, errs := run("analyze", "-s", "s="+statePath, "-p", planPath, "--config", brokenDir, "--json", "-"); code != 1 || !strings.Contains(errs, "broken.tf") {
+		t.Errorf("parse error: exit %d, errs %q", code, errs)
+	}
+
+	if code, _, errs := run("analyze", "-s", "s="+statePath, "-p", planPath, "--config", cfgDir, "-o", filepath.Join(cfgDir, "main.tf")); code != 1 || !strings.Contains(errs, "configuration file") {
+		t.Errorf("report over .tf: exit %d, errs %q", code, errs)
+	}
+}

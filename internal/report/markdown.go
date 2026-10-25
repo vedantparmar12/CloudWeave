@@ -49,6 +49,13 @@ func WriteMarkdown(w io.Writer, r *Report) error {
 			fmt.Fprintf(&b, " · plan age %d min", *p.AgeMinutes)
 		}
 	}
+	if c := r.Config; c != nil {
+		cfgText := "**Config:** included (literals only)"
+		if c.RequiredVersion != "" {
+			cfgText += fmt.Sprintf(" · requires Terraform %s", mdCode(c.RequiredVersion))
+		}
+		fmt.Fprintf(&b, "  \n%s", cfgText)
+	}
 	b.WriteString("\n")
 	if len(r.ApplyOrder) > 1 {
 		order := make([]string, len(r.ApplyOrder))
@@ -145,6 +152,24 @@ func why(n *analysis.Node) string {
 	}
 	for _, r := range n.Reasons {
 		parts = append(parts, strings.ReplaceAll(r, "_", " "))
+	}
+	if len(n.Provisioners) > 0 {
+		parts = append(parts, "runs provisioners: "+strings.Join(n.Provisioners, ", "))
+	}
+	if n.HasCount || n.HasForEach {
+		sized := "count"
+		if n.HasCount && n.HasForEach {
+			sized = "count+for_each"
+		} else if n.HasForEach {
+			sized = "for_each"
+		}
+		parts = append(parts, "configured with "+sized)
+	}
+	if n.PreventDestroy {
+		parts = append(parts, "prevent_destroy")
+	}
+	if n.CreateBeforeDestroy {
+		parts = append(parts, "create_before_destroy")
 	}
 	return strings.Join(parts, "; ")
 }

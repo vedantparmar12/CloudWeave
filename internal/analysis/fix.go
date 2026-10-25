@@ -146,6 +146,13 @@ func fixTemplates(f *Finding) []FixStep {
 			{fixHCL + "Terraform >= 1.7: use this only in the relinquishing state, never in the retained owner's state. Coordinate removal of the relinquishing configuration and review the full scope, including resource instances; confirm no infrastructure destruction or recreation is planned.", fixRemoved},
 			{fixBash + "After an approved ownership handoff, replan both states and confirm exactly one owner remains. If the chosen owner already tracks the object, do not import it again.", replan},
 		}
+	case "CW602":
+		return []FixStep{{Text: "Provisioners execute only during apply; terraform plan never runs them. Review each command's runtime needs (tools, network, credentials) with its owner, prefer provider features or native resources over local-exec/remote-exec, and never place secrets in provisioner commands or environment echoes."}}
+	case "CW603":
+		return []FixStep{
+			{Text: "The recorded replacement order destroys the current object first although the configuration declares create_before_destroy. Investigate deposed objects and provider behavior with the owner, and confirm consumers can tolerate any gap before an approved run."},
+			{fixBash + "After resolving the ordering question, make a new full plan and rerun CloudWeave to confirm the recorded replacement order.", replan},
+		}
 	case "CW504":
 		return []FixStep{{Text: "Review the cycle with all state owners. Give shared resources and outputs a single owner or remove a cyclic output dependency through an independently reviewed design. Replan all consumers after breaking the cycle; there is no safe universal ordering for the existing cycle."}}
 	case "CW601":

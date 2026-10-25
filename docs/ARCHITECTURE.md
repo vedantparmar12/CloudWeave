@@ -22,8 +22,9 @@ CloudWeave does not keep a shadow backend in sync. It analyzes exported snapshot
 
 ```
  state files ──► state.LoadState   ─┐
- pg backend  ──► state.LoadPGState ─┼─► analysis.Analyze ─► report.Build ─► HTML / JSON / Markdown / terminal
- plan JSON   ──► state.LoadPlan    ─┘
+ pg backend  ──► state.LoadPGState ─┤
+ plan JSON   ──► state.LoadPlan    ─┼─► analysis.Analyze ─► report.Build ─► HTML / JSON / Markdown / terminal
+ config dir  ──► tfconfig.Load     ─┘
 ```
 
 1. **Load** (`internal/state`)
@@ -32,7 +33,8 @@ CloudWeave does not keep a shadow backend in sync. It analyzes exported snapshot
    - PostgreSQL uses `BEGIN READ ONLY`, `SELECT data FROM <quoted-schema>.states WHERE name=$1`, then rollback, with no writes, DDL, commit or advisory locks. Schema is identifier-quoted; workspace is bound via the extended protocol even if the DSN requests simple protocol. Connection-time `target_session_attrs` checks are rejected because they can issue extra SQL. Ordinary PostgreSQL read locks still apply.
    - Connect/read work has a 15-second deadline; rollback and close each have independent 5-second cleanup deadlines. Schema and workspace flags apply to every PostgreSQL input. Reads are independent snapshots, not an atomic multi-database snapshot. Wire-protocol tests use a loopback fake, not a live database.
    - Plans are parsed with `hashicorp/terraform-json`, plus `applyable`/`errored`, which that library does not expose.
-   - From the plan we take resource changes, drift, the refreshed prior state, configuration references (module-aware) and explicit `terraform_remote_state` output references.
+   - From the plan we take resource changes, drift, the refreshed prior state, configuration references (module-aware), explicit `terraform_remote_state` output references, provisioner **types** (never commands) and count/for_each presence.
+   - Optional `--config dir` parses the root module's native-syntax `.tf` files with `hashicorp/hcl` (`internal/tfconfig`). Only literals are extracted: lifecycle flags, count/for_each presence, the `terraform_remote_state` backend keyword, a whitelisted workspace literal and `required_version`. Expressions are never evaluated. A remote-state config key's value expression is evaluated only after the key passes the whitelist, so `conn_string`, `access_key`, `secret_key`, `password`, `token` and every other key is never read, stored or logged, even when its value is a literal. Local module sources (`./`, `../`, `//subdir`) are followed recursively with cycle detection, recording module-prefixed addresses that match module instances through key-stripped lookups; registry, remote and dynamic sources set `UnresolvedModules`, which caveats CW206's absence claims instead of asserting them.
 2. **Analyze** (`internal/analysis`)
    1. Name inputs uniquely and pick the *primary* state. Auto-detection hashes instance IDs in each state and in the plan's prior state and picks the best overlap. If nothing matches, the plan's own prior state is used and CW008 is raised.
    2. Build one graph for all states. Node ID = `state::address`. An edge `A → B` means "A depends on B".
@@ -41,8 +43,10 @@ CloudWeave does not keep a shadow backend in sync. It analyzes exported snapshot
       - Planned creates become new nodes.
       - Configuration references add edges for new resources.
       - Remote-state references connect resources to the data source they read.
+      - Lifecycle flags and count/for_each from a provided configuration directory are stamped onto primary-state nodes.
    4. **Cross-state linking**:
       - `terraform_remote_state` outputs are matched to producer outputs by canonical JSON value; stale copies raise CW502.
+      - Without a matching producer, CW501 asks for the producer state — also when only one state was passed. With `--config` it names the backend and workspace and points `pg` backends at `--pg-state`.
       - The data source is then wired to the producer resource that owns the output value.
       - ID matching uses an owner index of hashed top-level identity attributes.
    5. **Federation analysis**:
@@ -54,7 +58,7 @@ CloudWeave does not keep a shadow backend in sync. It analyzes exported snapshot
       - Downstream is a BFS over dependents, across states.
       - Upstream is the direct dependencies of the seeds.
       - Per-seed impact counts include cross-state counts.
-   7. Run plan, drift, blast-radius, state-hygiene and (optionally) credential checks.
+   7. Run plan, drift, provisioner, blast-radius, state-hygiene and (optionally) credential checks.
    8. **Apply order**: collapse cross-state edges (excluding low-confidence and federation edges, since trust can be wired in either order) into a state graph and order it topologically. Cycles raise CW504.
    9. **Pseudo-apply**: copy resource presence into an in-memory model; build a deterministic operation DAG from recorded plan actions and same-state dependency edges. Preserve replacement phase order, reverse destroy dependencies and retain objects for forget operations. Unchanged resources can connect operations. Cycles, mixed instance actions and deposed objects stay unresolved. Model failures do not transition objects; dependent operations become blocked. Cross-state consumers, federation, IAM propagation and credential expiry are conditional warnings, not observed failures. Other states get follow-up planning reminders only.
    10. Attach static fix templates using placeholders, not values or executable interpolated metadata. Add CW601 for model failures/unresolved operations, sort findings and derive the verdict.
@@ -73,9 +77,11 @@ Attributes that Terraform marks sensitive (`before_sensitive` / `after_sensitive
 
 One graph page replaces the previous tabs. With a plan it starts with changed/impacted resources and direct dependencies; without a plan it shows a bounded graph grouped by state. Search covers the full metadata inventory and focuses a neighborhood on the same canvas. The total rendered node count is bounded by `--max-nodes`, with hidden counts shown.
 
-A side panel holds all findings (including global findings), resource explanations, display-only fix templates, and the pseudo-apply timeline. State filters and graph reset keep navigation on one page. The header's state order is advisory, not an execution schedule.
+The same graph accepts file, PostgreSQL, and plan-prior snapshots. Loaders retain only an enum (`file`, `postgresql`, `plan`) for source provenance, independently of state format. The header summarizes input modes; the input help panel provides static CLI examples. The report has no live database connection or state upload path.
 
-Pan and zoom use a single SVG transform. Hovering traces neighbors; SVG export inlines styles so it renders independently. The implementation remains original vanilla JS/SVG, with no embedded third-party visualizer.
+A collapsible side panel holds all findings (including global findings), resource explanations, display-only fix templates, and the pseudo-apply timeline. State and view filters plus graph reset keep navigation on one page. All-resources mode is available even with a plan. The inspector's state order is advisory, not an execution schedule.
+
+Semantic CSS tokens supply dark/light themes with a system option; browser storage contains only the theme preference. Pan and zoom use a single SVG transform, with keyboard controls as well as pointer input. Node labels are clipped inside non-overlapping cards; full addresses remain in tooltips and the inspector. Mobile stacks the inspector below a canvas with a minimum usable height. SVG export resolves theme colors and fonts to inline styles. The implementation remains original vanilla JS/SVG, with no embedded third-party visualizer.
 
 ## Edge cases handled
 
@@ -93,7 +99,9 @@ Pan and zoom use a single SVG transform. Hovering traces neighbors; SVG export i
 | Tokens expiring during a long apply | `--apply-window` vs JWT `exp` → CW402. |
 | New IAM grants used in the same apply | CW313 (eventual consistency). |
 | Saved plan applied later | CW003 plus CW004 (prior state differs from current state). |
-| Output path collides with an input | Refused, including `*.tfstate*` names and hard links (`os.SameFile`). |
+| Output path collides with an input | Refused, including `*.tfstate*` and `*.tf`/`*.tf.json` names and hard links (`os.SameFile`). |
+| Registry, remote or dynamic module sources in `--config` | Not readable offline; `UnresolvedModules` caveats CW206's "confirmed absent" wording instead of asserting it. Missing local module directories and module cycles are hard errors. |
+| Credential-bearing keys in a `terraform_remote_state` config block | Value expressions are evaluated only after the key passes the `workspace`/`schema` whitelist; nothing else is read, stored or logged. |
 | HTML injection through resource names | JSON is HTML-escaped and the DOM is built with `textContent` only, under a CSP that forbids external loads. |
 
 ## Known gaps / roadmap

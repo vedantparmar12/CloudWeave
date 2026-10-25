@@ -53,6 +53,12 @@ type Node struct {
 	SensitiveAttrs int      `json:"sensitive_attrs,omitempty"`
 	Reasons        []string `json:"reasons,omitempty"`
 	Importing      bool     `json:"importing,omitempty"`
+	// Configuration metadata: names and flags only, never values.
+	Provisioners        []string `json:"provisioners,omitempty"`
+	HasCount            bool     `json:"has_count,omitempty"`
+	HasForEach          bool     `json:"has_for_each,omitempty"`
+	PreventDestroy      bool     `json:"prevent_destroy,omitempty"`
+	CreateBeforeDestroy bool     `json:"create_before_destroy,omitempty"`
 }
 
 // Edge means From depends on To.

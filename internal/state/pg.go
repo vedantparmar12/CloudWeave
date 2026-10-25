@@ -95,6 +95,7 @@ func LoadPGState(ctx context.Context, spec, schema, workspace string) (st *State
 	if err != nil {
 		return nil, errors.New("parse PostgreSQL state failed")
 	}
+	st.Source = SourcePostgreSQL
 	return st, nil
 }
 

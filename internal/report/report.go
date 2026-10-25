@@ -27,6 +27,7 @@ type Report struct {
 	Counts      map[string]int          `json:"finding_counts"`
 	States      []analysis.StateSummary `json:"states"`
 	Plan        *analysis.PlanSummary   `json:"plan,omitempty"`
+	Config      *analysis.ConfigSummary `json:"config,omitempty"`
 	Findings    []analysis.Finding      `json:"findings"`
 	Seeds       []string                `json:"seeds"`
 	ApplyOrder  []string                `json:"apply_order,omitempty"`
@@ -46,6 +47,7 @@ func Build(res *analysis.Result, toolVersion string, maxNodes int) *Report {
 		Counts:      map[string]int{},
 		States:      res.States,
 		Plan:        res.Plan,
+		Config:      res.Config,
 		Findings:    res.Findings,
 		Seeds:       res.Seeds,
 		ApplyOrder:  res.ApplyOrder,

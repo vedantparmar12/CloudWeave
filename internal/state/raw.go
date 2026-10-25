@@ -103,6 +103,7 @@ func loadRawState(path, name string, data []byte) (*State, error) {
 		Name:             name,
 		Path:             path,
 		Format:           FormatRaw,
+		Source:           SourceFile,
 		TerraformVersion: raw.TerraformVersion,
 		Lineage:          raw.Lineage,
 	}
@@ -267,6 +268,7 @@ func loadShowJSONState(path, name string, data []byte) (*State, error) {
 		Name:             name,
 		Path:             path,
 		Format:           FormatShowJSON,
+		Source:           SourceFile,
 		TerraformVersion: sj.TerraformVersion,
 	}
 	if sj.Values == nil {

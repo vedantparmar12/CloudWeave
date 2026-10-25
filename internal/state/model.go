@@ -30,11 +30,21 @@ const (
 	FormatShowJSON Format = "show-json-state"
 )
 
+// Source identifies how a state was loaded, independent of its format.
+type Source string
+
+const (
+	SourceFile       Source = "file"
+	SourcePostgreSQL Source = "postgresql"
+	SourcePlan       Source = "plan"
+)
+
 // State is a normalized Terraform state.
 type State struct {
 	Name             string
 	Path             string
 	Format           Format
+	Source           Source
 	TerraformVersion string
 	Serial           *int64
 	Lineage          string

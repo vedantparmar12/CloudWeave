@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/vedantparmar12/cloudweave/internal/state"
+	"github.com/vedantparmar12/cloudweave/internal/tfconfig"
 )
 
 type remoteLink struct {
@@ -34,11 +35,16 @@ type owner struct {
 }
 
 func (a *analyzer) linkCrossState() {
-	if len(a.states) < 2 {
+	if len(a.states) == 0 {
 		return
 	}
 	idx := a.ownerIndex()
+	// CW501 also applies to a lone state: its remote-state reads point at a
+	// producer that was not passed. Identity matching needs a second state.
 	a.linkRemoteState(idx)
+	if len(a.states) < 2 {
+		return
+	}
 	a.linkByIdentity(idx)
 }
 
@@ -106,6 +112,19 @@ func idConfidence(v string) string {
 	return ConfLow
 }
 
+// cfgRemoteState finds a remote-state hint by address, tolerating module
+// instance keys (module.vpc["a"].data.… ) because --config records none.
+func (a *analyzer) cfgRemoteState(addr string) (tfconfig.RemoteState, bool) {
+	if a.cfg == nil {
+		return tfconfig.RemoteState{}, false
+	}
+	if rs, ok := a.cfg.RemoteStates[addr]; ok {
+		return rs, true
+	}
+	rs, ok := a.cfg.RemoteStates[state.StripAllKeys(addr)]
+	return rs, ok
+}
+
 func (a *analyzer) linkRemoteState(idx map[string][]owner) {
 	for _, consumer := range a.states {
 		for _, r := range consumer.Resources {
@@ -115,14 +134,27 @@ func (a *analyzer) linkRemoteState(idx map[string][]owner) {
 			}
 			link := a.bestProducer(consumer, outs)
 			if link == nil {
+				detail := fmt.Sprintf("%s in %s reads %d outputs from a state that was not passed to CloudWeave, so impact through it cannot be traced.",
+					r.Address, consumer.Name, len(outs))
+				remediation := "Pass the producer state with another --state flag."
+				if rs, ok := a.cfgRemoteState(r.Address); ok {
+					if rs.Backend != "" {
+						detail += fmt.Sprintf(" Its configuration uses the %s backend.", rs.Backend)
+					}
+					if rs.Workspace != "" {
+						detail += fmt.Sprintf(" Fetch the %q workspace snapshot of the producer state.", rs.Workspace)
+					}
+					if rs.Backend == "pg" {
+						remediation += " CloudWeave can also read it directly with --pg-state."
+					}
+				}
 				a.add(Finding{
-					Rule:     "CW501",
-					Severity: SevInfo,
-					Category: CatCrossState,
-					Title:    "Remote state source not provided",
-					Detail: fmt.Sprintf("%s in %s reads %d outputs from a state that was not passed to CloudWeave, so impact through it cannot be traced.",
-						r.Address, consumer.Name, len(outs)),
-					Remediation: "Pass the producer state with another --state flag.",
+					Rule:        "CW501",
+					Severity:    SevInfo,
+					Category:    CatCrossState,
+					Title:       "Remote state source not provided",
+					Detail:      detail,
+					Remediation: remediation,
 					Nodes:       []string{NodeID(consumer.Name, r.Address)},
 				})
 				continue

@@ -125,6 +125,9 @@ func TestLoadPGStateReadOnlyWire(t *testing.T) {
 	if st.Name != "prod-eu.1" || st.Path != "" || st.Format != FormatRaw || st.Serial == nil || *st.Serial != 42 || st.Lineage != "pg-lineage" || len(st.Outputs) != 1 || st.Outputs[0].Value != "plain text" {
 		t.Fatalf("incorrect PostgreSQL state metadata: %+v", st)
 	}
+	if st.Source != SourcePostgreSQL {
+		t.Errorf("source = %q, want %q", st.Source, SourcePostgreSQL)
+	}
 	result := awaitPGWire(t, done)
 	assertPGStatements(t, result, schema)
 	if result.workspace != workspace {
@@ -304,7 +307,10 @@ func servePGWire(conn net.Conn, opts pgWireOptions) (result pgWireResult) {
 	status := byte('I')
 	for {
 		msg, err := backend.Receive()
-		if errors.Is(err, io.EOF) {
+		// The client may close right after its Terminate message; on Windows
+		// that final read can surface as a truncated message instead of a
+		// clean EOF. Statements already parsed are unaffected.
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return result
 		}
 		if err != nil {

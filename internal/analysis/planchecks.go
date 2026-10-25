@@ -5,10 +5,12 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"time"
 
 	version "github.com/hashicorp/go-version"
 	"github.com/vedantparmar12/cloudweave/internal/state"
+	"github.com/vedantparmar12/cloudweave/internal/tfconfig"
 )
 
 func (a *analyzer) checkPlan() {
@@ -63,7 +65,39 @@ func (a *analyzer) checkPlan() {
 	a.checkPriorState()
 	a.checkFederationChanges()
 	a.checkRemovedConfig()
+	a.checkLifecycleContradiction()
 	a.checkConsumedOutputs()
+}
+
+// checkProvisioners flags changed resources that run provisioners at apply
+// time. Plans never execute provisioners, so their failures are invisible to
+// terraform plan. Only provisioner types are reported, never their commands.
+func (a *analyzer) checkProvisioners() {
+	if a.plan == nil || a.primary == nil {
+		return
+	}
+	var nodes, types []string
+	for _, n := range a.g.SortedNodes() {
+		if n.State != a.primary.Name || !isMutation(n.Action) || len(n.Provisioners) == 0 {
+			continue
+		}
+		nodes = append(nodes, n.ID)
+		for _, p := range n.Provisioners {
+			types = appendUniqueStr(types, p)
+		}
+	}
+	if len(nodes) == 0 {
+		return
+	}
+	sort.Strings(types)
+	a.add(Finding{
+		Rule: "CW602", Severity: SevMedium, Category: CatPlan,
+		Title: "Apply runs provisioners on changed resources",
+		Detail: fmt.Sprintf("%d changed resources run provisioners (%s). terraform plan never executes provisioners, so missing tools, network access or credentials appear only during apply.",
+			len(nodes), strings.Join(types, ", ")),
+		Remediation: "Review each provisioner's runtime needs with its owner before apply; prefer provider features or native resources over shell steps, and never place secrets in provisioner commands.",
+		Nodes:       nodes,
+	})
 }
 
 func roundDuration(d time.Duration) string {
@@ -179,6 +213,19 @@ func managedIDs(st *state.State) map[string]string {
 	return out
 }
 
+// cfgResource finds a configuration fact by address, tolerating module
+// instance keys (module.vpc["a"].x) because --config records none.
+func (a *analyzer) cfgResource(addr string) (tfconfig.Resource, bool) {
+	if a.cfg == nil {
+		return tfconfig.Resource{}, false
+	}
+	if res, ok := a.cfg.Resources[addr]; ok {
+		return res, true
+	}
+	res, ok := a.cfg.Resources[state.StripAllKeys(addr)]
+	return res, ok
+}
+
 func (a *analyzer) checkRemovedConfig() {
 	var nodes []string
 	seen := map[string]bool{}
@@ -195,12 +242,68 @@ func (a *analyzer) checkRemovedConfig() {
 	if len(nodes) == 0 {
 		return
 	}
+	detail := fmt.Sprintf("%d resources lost their configuration block. If they were moved to another state or module, applying this plan deletes live infrastructure.", len(nodes))
+	if a.cfg != nil {
+		var stillConfigured, absent []string
+		for _, id := range nodes {
+			if n := a.g.Nodes[id]; n != nil {
+				if _, ok := a.cfgResource(n.Address); ok {
+					stillConfigured = append(stillConfigured, n.Address)
+				} else {
+					absent = append(absent, n.Address)
+				}
+			}
+		}
+		if len(stillConfigured) > 0 {
+			detail += fmt.Sprintf(" %d of them are still declared in the provided configuration directory (%s); confirm count/for_each did not evaluate to zero rather than assuming a move.",
+				len(stillConfigured), joinLimited(stillConfigured, 5))
+		}
+		if len(absent) > 0 {
+			detail += fmt.Sprintf(" %d of them are confirmed absent from the provided configuration directory.", len(absent))
+			if a.cfg.UnresolvedModules {
+				detail += " Some module sources (registry, remote or dynamic) could not be read, so this absence is not fully confirmed."
+			}
+		}
+	}
 	a.add(Finding{
 		Rule: "CW206", Severity: SevHigh, Category: CatPlan,
-		Title: "Resources will be destroyed because their configuration was removed",
-		Detail: fmt.Sprintf("%d resources lost their configuration block. If they were moved to another state or module, applying this plan deletes live infrastructure.",
-			len(nodes)),
+		Title:       "Resources will be destroyed because their configuration was removed",
+		Detail:      detail,
 		Remediation: "For a same-state move, retain destination configuration and use a reviewed `moved` block. For a cross-state ownership transfer, pause competing runs and take protected backups, coordinate non-destructive removal only in the relinquishing state with import into exactly one destination owner, and review full plans for both states to prevent destruction or recreation.",
+		Nodes:       nodes,
+	})
+}
+
+// checkLifecycleContradiction flags replacements whose recorded order destroys
+// the current object first even though the configuration declares
+// create_before_destroy. Only addresses present in the provided configuration
+// directory can be checked.
+func (a *analyzer) checkLifecycleContradiction() {
+	if a.cfg == nil || a.primary == nil {
+		return
+	}
+	var nodes []string
+	for _, c := range a.plan.Changes {
+		if len(c.Actions) != 2 || c.Actions[0] != state.ActionDelete || c.Actions[1] != state.ActionCreate {
+			continue
+		}
+		res, ok := a.cfgResource(c.Address)
+		if !ok || !res.CreateBeforeDestroy {
+			continue
+		}
+		for _, id := range a.g.Resolve(a.primary.Name, c.Address) {
+			nodes = appendUniqueStr(nodes, id)
+		}
+	}
+	if len(nodes) == 0 {
+		return
+	}
+	a.add(Finding{
+		Rule: "CW603", Severity: SevMedium, Category: CatPlan,
+		Title: "Replacement order contradicts create_before_destroy",
+		Detail: fmt.Sprintf("%d replacements destroy the current object before creating its successor although the configuration declares create_before_destroy. Consumers may lose the object before its replacement exists.",
+			len(nodes)),
+		Remediation: "Investigate deposed objects and provider behavior with the owner, confirm consumers tolerate any gap, and review a new full plan before applying.",
 		Nodes:       nodes,
 	})
 }

@@ -78,7 +78,14 @@ type Plan struct {
 	RemoteStateRefs  []RemoteStateRef
 	// ConfigDeps maps a resource address (no instance keys) to the resource
 	// addresses its configuration references.
-	ConfigDeps     map[string][]string
+	ConfigDeps map[string][]string
+	// ConfigProvisioners maps resource addresses to provisioner types
+	// (e.g. local-exec). Provisioner commands are never read.
+	ConfigProvisioners map[string][]string
+	// ConfigCounts lists resource addresses with a count expression.
+	ConfigCounts map[string]bool
+	// ConfigForEach lists resource addresses with a for_each expression.
+	ConfigForEach  map[string]bool
 	ChangedOutputs []string
 }
 
@@ -153,6 +160,7 @@ func LoadPlan(path string) (*Plan, error) {
 			Name:             "plan-prior-state",
 			Path:             path,
 			Format:           FormatShowJSON,
+			Source:           SourcePlan,
 			TerraformVersion: raw.PriorState.TerraformVersion,
 		}
 		for outName, out := range raw.PriorState.Values.Outputs {
@@ -165,7 +173,7 @@ func LoadPlan(path string) (*Plan, error) {
 		plan.PriorState = prior
 	}
 
-	plan.RemoteStateRefs, plan.ConfigDeps = analyzeConfig(raw.Config)
+	plan.RemoteStateRefs, plan.ConfigDeps, plan.ConfigProvisioners, plan.ConfigCounts, plan.ConfigForEach = analyzeConfig(raw.Config)
 
 	return plan, nil
 }
@@ -401,13 +409,17 @@ func parseTimestamp(s string) (time.Time, error) {
 }
 
 // analyzeConfig walks the plan configuration and returns explicit
-// terraform_remote_state references and resource-to-resource references.
-func analyzeConfig(cfg *tfjson.Config) ([]RemoteStateRef, map[string][]string) {
+// terraform_remote_state references, resource-to-resource references, and
+// per-resource metadata (provisioner types and count/for_each presence).
+// Only names and flags are collected; expression values are never read.
+func analyzeConfig(cfg *tfjson.Config) (refs []RemoteStateRef, deps, provisioners map[string][]string, counted, forEached map[string]bool) {
 	if cfg == nil {
-		return nil, nil
+		return nil, nil, nil, nil, nil
 	}
-	var refs []RemoteStateRef
-	deps := map[string][]string{}
+	deps = map[string][]string{}
+	provisioners = map[string][]string{}
+	counted = map[string]bool{}
+	forEached = map[string]bool{}
 	walkConfigModule(cfg.RootModule, "", func(prefix, resAddr string, cr *tfjson.ConfigResource) {
 		for _, ref := range gatherReferences(cr) {
 			if dataAddr, output, ok := parseRemoteStateReference(ref); ok {
@@ -424,8 +436,26 @@ func analyzeConfig(cfg *tfjson.Config) ([]RemoteStateRef, map[string][]string) {
 				deps[resAddr] = appendUnique(deps[resAddr], dep)
 			}
 		}
+		for _, p := range cr.Provisioners {
+			if p != nil && p.Type != "" {
+				provisioners[resAddr] = appendUnique(provisioners[resAddr], p.Type)
+			}
+		}
+		if cr.CountExpression != nil {
+			counted[resAddr] = true
+		}
+		if cr.ForEachExpression != nil {
+			forEached[resAddr] = true
+		}
 	})
-	return dedupeRefs(refs), deps
+	// Expression maps iterate in random order; sort so reports are deterministic.
+	for addr := range deps {
+		sort.Strings(deps[addr])
+	}
+	for addr := range provisioners {
+		sort.Strings(provisioners[addr])
+	}
+	return dedupeRefs(refs), deps, provisioners, counted, forEached
 }
 
 func walkConfigModule(mod *tfjson.ConfigModule, prefix string, fn func(prefix, addr string, cr *tfjson.ConfigResource)) {

@@ -3,6 +3,7 @@ package report
 import (
 	"bytes"
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -148,5 +149,131 @@ func TestJSONHasNoAttributeValues(t *testing.T) {
 	}
 	if strings.Contains(buf.String(), "hunter2") || strings.Contains(buf.String(), "db-1234567890") {
 		t.Error("attribute values leaked into JSON report")
+	}
+}
+
+func TestMixedSourceReports(t *testing.T) {
+	fixture := func(name string) string {
+		return filepath.Join("..", "..", "testdata", "multicloud", name)
+	}
+	for _, source := range []state.Source{state.SourcePostgreSQL, state.SourcePlan} {
+		t.Run(string(source), func(t *testing.T) {
+			file, err := state.LoadState(fixture("gcp.tfstate"))
+			if err != nil {
+				t.Fatal(err)
+			}
+			// A file label must not masquerade as plan provenance.
+			file.Name = "plan-prior-state"
+			var other *state.State
+			format := state.FormatRaw
+			if source == state.SourcePlan {
+				plan, err := state.LoadPlan(fixture("azure-plan.json"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				other = plan.PriorState
+				format = state.FormatShowJSON
+			} else {
+				other, err = state.LoadState(fixture("azure.tfstate"))
+				if err != nil {
+					t.Fatal(err)
+				}
+				// The real PG loader is covered by TestLoadPGStateReadOnlyWire.
+				other.Source = state.SourcePostgreSQL
+				other.Path = ""
+			}
+			if other == nil {
+				t.Fatal("normalized state missing")
+			}
+			// Renaming a real plan prior state must not lose its provenance.
+			other.Name = "azure"
+			res, err := analysis.Analyze([]*state.State{file, other}, nil, analysis.Options{
+				Now: time.Unix(0, 0), Getenv: func(string) string { return "" },
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			check := func(t *testing.T, summaries []analysis.StateSummary, edges []analysis.Edge) {
+				t.Helper()
+				if len(summaries) != 2 {
+					t.Fatalf("got %d state summaries, want 2", len(summaries))
+				}
+				for _, s := range summaries {
+					switch s.Name {
+					case file.Name:
+						if s.Source != state.SourceFile || s.Format != state.FormatRaw || s.FromPlan {
+							t.Errorf("file provenance lost or inferred from name: %+v", s)
+						}
+					case other.Name:
+						if s.Source != source || s.Format != format || s.FromPlan != (source == state.SourcePlan) {
+							t.Errorf("%s provenance lost: %+v", source, s)
+						}
+					default:
+						t.Errorf("unexpected state summary: %+v", s)
+					}
+				}
+				for _, want := range []analysis.Edge{
+					{From: analysis.NodeID(other.Name, "data.terraform_remote_state.gcp"), To: analysis.NodeID(file.Name, "google_service_account.bridge"), Kind: analysis.EdgeRemoteState},
+					{From: analysis.NodeID(file.Name, "google_service_account_iam_member.workload_identity_user"), To: analysis.NodeID(other.Name, "azurerm_user_assigned_identity.workload"), Kind: analysis.EdgeFederation},
+				} {
+					found := false
+					for _, edge := range edges {
+						if edge.From == want.From && edge.To == want.To && edge.Kind == want.Kind {
+							found = true
+							break
+						}
+					}
+					if !found {
+						t.Errorf("cross-source link missing: %+v", want)
+					}
+				}
+			}
+			check(t, res.States, res.Graph.Edges)
+			rep := Build(res, "test", 100)
+			check(t, rep.States, rep.Edges)
+			for name, write := range map[string]func(*bytes.Buffer) error{
+				"json":     func(b *bytes.Buffer) error { return WriteJSON(b, rep) },
+				"html":     func(b *bytes.Buffer) error { return WriteHTML(b, rep) },
+				"markdown": func(b *bytes.Buffer) error { return WriteMarkdown(b, rep) },
+			} {
+				t.Run(name, func(t *testing.T) {
+					var buf bytes.Buffer
+					if err := write(&buf); err != nil {
+						t.Fatal(err)
+					}
+					text := buf.String()
+					for _, sentinel := range []string{"SECRET-KUBECONFIG", "SECRET-STORAGE-KEY", "108234567890123456789", "c0ffee00-1234-4abc-9def-0123456789ab"} {
+						if strings.Contains(text, sentinel) {
+							t.Error("attribute value leaked into report")
+						}
+					}
+					if name == "markdown" {
+						return // Only JSON and embedded HTML data carry state metadata.
+					}
+					if name == "html" {
+						_, body, ok := strings.Cut(text, `<script id="cw-data" type="application/json">`)
+						if !ok {
+							t.Fatal("embedded report missing")
+						}
+						text, _, ok = strings.Cut(body, "</script>")
+						if !ok {
+							t.Fatal("embedded report not terminated")
+						}
+					}
+					if strings.Count(text, `"source":`) != 2 {
+						t.Error("source JSON fields missing")
+					}
+					var back struct {
+						States []analysis.StateSummary `json:"states"`
+						Edges  []analysis.Edge         `json:"edges"`
+					}
+					if err := json.Unmarshal([]byte(text), &back); err != nil {
+						t.Fatal(err)
+					}
+					check(t, back.States, back.Edges)
+				})
+			}
+		})
 	}
 }

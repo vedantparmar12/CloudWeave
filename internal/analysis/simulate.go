@@ -106,7 +106,11 @@ func (a *analyzer) simulate() *Simulation {
 			continue
 		}
 		if n.Instances > 1 {
-			sim.Limitations = appendUniqueStr(sim.Limitations, "Multiple instances are aggregated; per-instance dependencies and partial replacements cannot be resolved exactly.")
+			msg := "Multiple instances are aggregated; per-instance dependencies and partial replacements cannot be resolved exactly."
+			if n.HasCount || n.HasForEach {
+				msg += " count/for_each keys cannot be evaluated offline."
+			}
+			sim.Limitations = appendUniqueStr(sim.Limitations, msg)
 		}
 		seq := sequences[n.ID]
 		if ambiguous[n.ID] || len(seq) == 0 {
@@ -235,6 +239,9 @@ func (a *analyzer) simulate() *Simulation {
 				}
 				if n.Drift != "" && n.Drift != state.ActionNoop {
 					mark(&step, OutcomeWarn, "Drift was reported by the plan; subsequent live changes are not observable offline.")
+				}
+				if len(n.Provisioners) > 0 {
+					mark(&step, OutcomeWarn, "Provisioners execute only at apply time; the plan does not exercise them, and their runtime needs may fail.")
 				}
 				if a.credLeft != nil && *a.credLeft < a.opts.ApplyWindow {
 					note := "A credential expires within the expected apply window; exact affected steps and provider refresh behavior are unknown."
