@@ -1,6 +1,10 @@
 package analysis
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/vedantparmar12/cloudweave/internal/state"
+)
 
 func TestDependencyLayersUseLongestChain(t *testing.T) {
 	g := NewGraph()
@@ -67,5 +71,78 @@ func TestDependencyLayersExposeCycleAndDependents(t *testing.T) {
 	f := a.findings[0]
 	if f.Rule != "CW505" || f.Severity != SevMedium || len(f.Nodes) != 3 {
 		t.Fatalf("finding = %+v", f)
+	}
+}
+
+func TestPlanConfigDepsSupplementRecordedDependencies(t *testing.T) {
+	st := &state.State{Name: "s", Resources: []*state.Resource{
+		{Address: "test.a", Type: "test", Dependencies: []string{"test.b"}},
+		{Address: "test.b", Type: "test"},
+		{Address: "test.c", Type: "test"},
+	}}
+	plan := &state.Plan{ConfigDeps: map[string][]string{
+		"test.a": {"test.b", "test.c"},
+	}}
+	res, err := Analyze([]*state.State{st}, plan, Options{PrimaryState: "s", Now: planTime, Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	aID := NodeID("s", "test.a")
+	bID := NodeID("s", "test.b")
+	cID := NodeID("s", "test.c")
+	if !hasEdge(res.Graph, aID, cID, EdgeDependency) {
+		t.Fatal("configuration dependency on a resource with recorded dependencies was not added")
+	}
+	abEdges := 0
+	for _, e := range res.Graph.Edges {
+		if e.From == aID && e.To == bID && e.Kind == EdgeDependency {
+			abEdges++
+		}
+	}
+	if abEdges != 1 {
+		t.Fatalf("a -> b dependency edges = %d, want one deduplicated edge", abEdges)
+	}
+	if n := res.Graph.Nodes[aID]; n.Layer != 1 || n.Unordered {
+		t.Fatalf("a layer=%d unordered=%v, want 1 false", n.Layer, n.Unordered)
+	}
+}
+
+func TestPlanConfigDepsExposeCycleWithRecordedEdges(t *testing.T) {
+	st := &state.State{Name: "s", Resources: []*state.Resource{
+		{Address: "test.a", Type: "test", Dependencies: []string{"test.c"}},
+		{Address: "test.b", Type: "test"},
+		{Address: "test.c", Type: "test"},
+	}}
+	plan := &state.Plan{ConfigDeps: map[string][]string{
+		"test.a": {"test.b"},
+		"test.b": {"test.a"},
+	}}
+	res, err := Analyze([]*state.State{st}, plan, Options{PrimaryState: "s", Now: planTime, Getenv: noEnv})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, addr := range []string{"test.a", "test.b"} {
+		n := res.Graph.Nodes[NodeID("s", addr)]
+		if n.Layer != -1 || !n.Unordered {
+			t.Errorf("%s layer=%d unordered=%v, want -1 true", addr, n.Layer, n.Unordered)
+		}
+	}
+	if n := res.Graph.Nodes[NodeID("s", "test.c")]; n.Layer != 0 || n.Unordered {
+		t.Errorf("independent dependency layer=%d unordered=%v, want 0 false", n.Layer, n.Unordered)
+	}
+	var finding *Finding
+	for i := range res.Findings {
+		if res.Findings[i].Rule == "CW505" {
+			finding = &res.Findings[i]
+			break
+		}
+	}
+	if finding == nil {
+		t.Fatal("CW505 missing for configuration cycle on resources with recorded dependencies")
+	}
+	if len(finding.Nodes) != 2 {
+		t.Fatalf("CW505 nodes = %v, want the two cycle resources", finding.Nodes)
 	}
 }

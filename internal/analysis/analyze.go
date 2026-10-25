@@ -403,10 +403,6 @@ func (a *analyzer) applyPlan() {
 	}
 	for from, deps := range a.plan.ConfigDeps {
 		for _, fromID := range a.g.Lookup(ps, from) {
-			fn := a.g.Nodes[fromID]
-			if !fn.Planned && len(a.g.deps[fromID]) > 0 {
-				continue
-			}
 			for _, dep := range deps {
 				for _, toID := range a.g.Lookup(ps, dep) {
 					a.g.AddEdge(Edge{From: fromID, To: toID, Kind: EdgeDependency, Evidence: "configuration reference"})
